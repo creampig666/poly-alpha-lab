@@ -1,0 +1,30 @@
+{
+  "url": "https://historical-forecast-api.open-meteo.com/v1/forecast",
+  "host": "historical-forecast-api.open-meteo.com",
+  "dns_status": "SUCCESS",
+  "dns_addresses": [
+    "28.0.0.125"
+  ],
+  "dns_error": null,
+  "tcp_status": "SUCCESS",
+  "tcp_error": null,
+  "http_status": "FAILED",
+  "http_status_code": null,
+  "http_error_type": "ConnectError",
+  "http_error_message": "[WinError 10061] 由于目标计算机积极拒绝，无法连接。",
+  "api_status": "SKIPPED",
+  "api_status_code": null,
+  "api_error_type": null,
+  "api_error_message": null,
+  "api_response_body_excerpt": null,
+  "error_classification": "CONNECTION_REFUSED",
+  "proxy_used": null,
+  "trust_env": true,
+  "env_http_proxy_present": true,
+  "env_https_proxy_present": true,
+  "env_all_proxy_present": true,
+  "env_http_proxy": "http://127.0.0.1:9",
+  "env_https_proxy": "http://127.0.0.1:9",
+  "env_all_proxy": "http://127.0.0.1:9",
+  "recommendation": "Environment proxy is present but connection is refused; verify proxy availability or pass --proxy explicitly."
+}

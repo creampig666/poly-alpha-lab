@@ -1,0 +1,33 @@
+{
+  "request_type": "forecast",
+  "params": {
+    "latitude": 48.8566,
+    "longitude": 2.3522,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "Europe/Paris",
+    "start_date": "2026-03-31",
+    "end_date": "2026-03-31"
+  },
+  "raw": {
+    "latitude": 48.86,
+    "longitude": 2.3599997,
+    "generationtime_ms": 0.0909566879272461,
+    "utc_offset_seconds": 7200,
+    "timezone": "Europe/Paris",
+    "timezone_abbreviation": "GMT+2",
+    "elevation": 36.0,
+    "daily_units": {
+      "time": "iso8601",
+      "temperature_2m_max": "°C"
+    },
+    "daily": {
+      "time": [
+        "2026-03-31"
+      ],
+      "temperature_2m_max": [
+        11.6
+      ]
+    }
+  }
+}

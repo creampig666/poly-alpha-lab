@@ -1,0 +1,19 @@
+{
+  "candidate_grade": "B",
+  "candidate_score": 70.74,
+  "category": "weather",
+  "end_date": "2026-05-09T12:00:00+00:00",
+  "entry_price": 0.004,
+  "entry_size": 10.0,
+  "expected_profit": 4.959203199999999,
+  "expected_value_per_share": 0.49592031999999997,
+  "fair_yes_probability": 0.5,
+  "fee_per_share": 7.968000000000001e-05,
+  "market_id": "2179092",
+  "probability_source": "manual",
+  "question": "Will the highest temperature in Sao Paulo be 24°C or below on May 9?",
+  "rationale": "manual paper trade; conditional EV from user-provided fair_yes_probability",
+  "side": "YES",
+  "slug": "highest-temperature-in-sao-paulo-on-may-9-2026-24corbelow",
+  "status": "OPEN"
+}

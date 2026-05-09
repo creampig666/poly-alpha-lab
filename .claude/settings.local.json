@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\28983\\\\dev\\\\poly-alpha-lab\" -Recurse -File -Force | Where-Object { $_.FullName -notmatch '__pycache__|\\\\.git|\\\\.venv' } | Sort-Object LastWriteTime -Descending | Select-Object LastWriteTime, FullName -First 50 | Format-Table -AutoSize | Out-String -Width 200)",
+      "Bash(python -m pytest --tb=short)",
+      "Bash(python -c 'from poly_alpha_lab.market_type_classifier import classify_strategy_candidate; import json; data=json.load\\(open\\('\\\\''strategy_candidates_daily.json'\\\\'',encoding='\\\\''utf-8'\\\\''\\)\\); from collections import Counter; from poly_alpha_lab.market_type_classifier import classify_strategy_candidate; ws=[c for c in data if c.get\\('\\\\''category'\\\\''\\)=='\\\\''weather'\\\\'']; print\\('\\\\''weather candidates:'\\\\'', len\\(ws\\)\\); *)",
+      "Bash(python -m pytest --tb=line)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/test_weather_backtest.py -q)"
+    ]
+  }
+}

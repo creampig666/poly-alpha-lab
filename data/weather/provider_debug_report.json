@@ -1,0 +1,46 @@
+{
+  "status": "CONNECTION_REFUSED",
+  "provider": "open_meteo",
+  "request_type": "forecast",
+  "endpoint_url": "https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.19&daily=temperature_2m_max&temperature_unit=celsius&timezone=UTC&start_date=2026-04-01&end_date=2026-04-01",
+  "actual_endpoint_url": "https://archive-api.open-meteo.com/v1/archive?latitude=45.4642&longitude=9.19&daily=temperature_2m_max&temperature_unit=celsius&timezone=UTC&start_date=2026-04-01&end_date=2026-04-01",
+  "request_params": {
+    "latitude": 45.4642,
+    "longitude": 9.19,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "UTC",
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-01"
+  },
+  "actual_request_params": {
+    "latitude": 45.4642,
+    "longitude": 9.19,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "UTC",
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-01"
+  },
+  "http_status_code": null,
+  "actual_http_status_code": null,
+  "response_top_level_keys": [],
+  "actual_response_top_level_keys": [],
+  "returned_dates": [],
+  "actual_returned_dates": [],
+  "forecast_mean_extracted": null,
+  "actual_value_extracted": null,
+  "forecast_source": null,
+  "actual_source": null,
+  "forecast_issued_at_construction_method": "parsed from CLI --forecast-issued-at",
+  "target_datetime_construction_method": "forecast_issued_at + horizon_hours",
+  "exception_type": "ConnectError",
+  "exception_message": "[WinError 10061] 由于目标计算机积极拒绝，无法连接。",
+  "response_body_excerpt": null,
+  "warnings": [
+    "historical_forecast_semantics_uncertain"
+  ],
+  "error_classification": "CONNECTION_REFUSED",
+  "proxy_used": null,
+  "trust_env": true
+}

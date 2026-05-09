@@ -1,0 +1,5 @@
+date,location,metric,forecast_mean,forecast_std,actual_value,unit,forecast_issued_at,station_id,source_location_name,latitude,longitude,forecast_source,forecast_model,std_method,actual_source,notes
+2026-05-09,Sao Paulo,high_temperature,30.8,1.2,,C,2026-05-08T00:00:00Z,,,-23.5505,-46.6333,sample,sample_normal_v1,manual_assumption,,sample row for CLI smoke only
+2026-05-10,Paris,high_temperature,27.0,2.0,,C,2026-05-08T00:00:00Z,,,48.8566,2.3522,sample,sample_normal_v1,manual_assumption,,sample row for CLI smoke only
+2026-05-08,New York City,high_temperature,75.0,2.0,,F,2026-05-08T00:00:00Z,,,40.7128,-74.0060,sample,sample_normal_v1,manual_assumption,,sample row for CLI smoke only
+2026-05-08,Milan,high_temperature,24.0,0.8,,C,2026-05-08T00:00:00Z,,Milan sample city row,45.4642,9.1900,sample,sample_normal_v1,manual_assumption,,sample row for CLI smoke only; not station matched to LIMC

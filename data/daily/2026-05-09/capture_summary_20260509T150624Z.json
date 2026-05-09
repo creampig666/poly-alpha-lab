@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-05-09T15:06:24.324745Z",
+  "alpha_as_of_time": "2026-05-09T15:10:37.901886Z",
+  "snapshot_captured_at": "2026-05-09T15:10:43.448277Z",
+  "forecast_time_tolerance_seconds": 120.0,
+  "output_dir": "data\\daily",
+  "strategy_candidates_path": "data\\daily\\2026-05-09\\strategy_candidates_20260509T150624Z.json",
+  "weather_alpha_path": "data\\daily\\2026-05-09\\weather_alpha_20260509T150624Z.json",
+  "summary_path": "data\\daily\\2026-05-09\\capture_summary_20260509T150624Z.json",
+  "snapshot_db": "data/polymarket_snapshots.sqlite",
+  "backtest_db": "data/weather_backtest.sqlite",
+  "strategy_candidates_count": 48,
+  "weather_candidates_count": 13,
+  "weather_alpha_signals_count": 1,
+  "snapshots_attempted": 13,
+  "snapshots_inserted": 13,
+  "backtest_saved": 0,
+  "backtest_skipped": 1,
+  "skipped_reasons": {
+    "no_paper_side,signal_status_not_valid,forecast_after_as_of_time,station_not_matched,bucket_boundary_not_confirmed": 1
+  },
+  "errors": [],
+  "warnings": [],
+  "timing_warnings": [],
+  "run_mode": "forward_capture",
+  "network_mode": {
+    "proxy": "http://127.0.0.1:7897",
+    "trust_env": false
+  },
+  "dry_run": false,
+  "exit_code": 0
+}

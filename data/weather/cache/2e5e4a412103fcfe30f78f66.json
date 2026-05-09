@@ -1,0 +1,35 @@
+{
+  "forecast": {
+    "date": "2026-05-08",
+    "location": "Milan",
+    "metric": "high_temperature",
+    "forecast_mean": 24.5,
+    "forecast_std": 1.4,
+    "actual_value": null,
+    "unit": "C",
+    "forecast_issued_at": "2026-05-07T12:00:00Z",
+    "station_id": "LIMC",
+    "source_location_name": "Malpensa Intl Airport Station",
+    "latitude": 45.6306,
+    "longitude": 8.7281,
+    "forecast_source": "open_meteo",
+    "forecast_model": "open_meteo_current_forecast",
+    "std_method": "fallback_error_std",
+    "actual_source": null,
+    "notes": "test",
+    "timezone": "Europe/Rome",
+    "cache_key": "2e5e4a412103fcfe30f78f66",
+    "raw_data_reference": "data\\weather\\cache\\2e5e4a412103fcfe30f78f66.json",
+    "location_mapping_found": true
+  },
+  "raw": {
+    "daily": {
+      "time": [
+        "2026-05-08"
+      ],
+      "temperature_2m_max": [
+        24.5
+      ]
+    }
+  }
+}

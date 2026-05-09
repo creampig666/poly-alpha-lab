@@ -1,0 +1,17 @@
+{
+  "request_type": "actual",
+  "params": {
+    "mock": true
+  },
+  "raw": {
+    "source": "open_meteo_archive",
+    "daily": {
+      "time": [
+        "2026-04-06"
+      ],
+      "temperature_2m_max": [
+        19.9
+      ]
+    }
+  }
+}

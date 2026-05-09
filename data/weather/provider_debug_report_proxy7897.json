@@ -1,0 +1,70 @@
+{
+  "status": "SUCCESS",
+  "provider": "open_meteo",
+  "request_type": "forecast",
+  "endpoint_url": "https://historical-forecast-api.open-meteo.com/v1/forecast?latitude=45.4642&longitude=9.19&daily=temperature_2m_max&temperature_unit=celsius&timezone=UTC&start_date=2026-04-01&end_date=2026-04-01",
+  "actual_endpoint_url": "https://archive-api.open-meteo.com/v1/archive?latitude=45.4642&longitude=9.19&daily=temperature_2m_max&temperature_unit=celsius&timezone=UTC&start_date=2026-04-01&end_date=2026-04-01",
+  "request_params": {
+    "latitude": 45.4642,
+    "longitude": 9.19,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "UTC",
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-01"
+  },
+  "actual_request_params": {
+    "latitude": 45.4642,
+    "longitude": 9.19,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "UTC",
+    "start_date": "2026-04-01",
+    "end_date": "2026-04-01"
+  },
+  "http_status_code": null,
+  "actual_http_status_code": null,
+  "response_top_level_keys": [
+    "daily",
+    "daily_units",
+    "elevation",
+    "generationtime_ms",
+    "latitude",
+    "longitude",
+    "timezone",
+    "timezone_abbreviation",
+    "utc_offset_seconds"
+  ],
+  "actual_response_top_level_keys": [
+    "daily",
+    "daily_units",
+    "elevation",
+    "generationtime_ms",
+    "latitude",
+    "longitude",
+    "timezone",
+    "timezone_abbreviation",
+    "utc_offset_seconds"
+  ],
+  "returned_dates": [
+    "2026-04-01"
+  ],
+  "actual_returned_dates": [
+    "2026-04-01"
+  ],
+  "forecast_mean_extracted": 15.6,
+  "actual_value_extracted": 15.3,
+  "forecast_source": "open_meteo",
+  "actual_source": "open_meteo_archive",
+  "forecast_issued_at_construction_method": "parsed from CLI --forecast-issued-at",
+  "target_datetime_construction_method": "forecast_issued_at + horizon_hours",
+  "exception_type": null,
+  "exception_message": null,
+  "response_body_excerpt": "{\"latitude\": 45.46, \"longitude\": 9.199999, \"generationtime_ms\": 0.06020069122314453, \"utc_offset_seconds\": 0, \"timezone\": \"GMT\", \"timezone_abbreviation\": \"GMT\", \"elevation\": 147.0, \"daily_units\": {\"time\": \"iso8601\", \"temperature_2m_max\": \"°C\"}, \"daily\": {\"time\": [\"2026-04-01\"], \"temperature_2m_max\": [15.6]}}",
+  "warnings": [
+    "historical_forecast_semantics_uncertain"
+  ],
+  "error_classification": "NONE",
+  "proxy_used": "http://127.0.0.1:7897",
+  "trust_env": false
+}

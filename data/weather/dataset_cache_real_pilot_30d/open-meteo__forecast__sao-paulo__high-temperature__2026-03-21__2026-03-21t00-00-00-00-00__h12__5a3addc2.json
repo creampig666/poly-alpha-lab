@@ -1,0 +1,33 @@
+{
+  "request_type": "forecast",
+  "params": {
+    "latitude": -23.5505,
+    "longitude": -46.6333,
+    "daily": "temperature_2m_max",
+    "temperature_unit": "celsius",
+    "timezone": "America/Sao_Paulo",
+    "start_date": "2026-03-21",
+    "end_date": "2026-03-21"
+  },
+  "raw": {
+    "latitude": -23.514938,
+    "longitude": -46.610504,
+    "generationtime_ms": 0.047206878662109375,
+    "utc_offset_seconds": -10800,
+    "timezone": "America/Sao_Paulo",
+    "timezone_abbreviation": "GMT-3",
+    "elevation": 758.0,
+    "daily_units": {
+      "time": "iso8601",
+      "temperature_2m_max": "°C"
+    },
+    "daily": {
+      "time": [
+        "2026-03-21"
+      ],
+      "temperature_2m_max": [
+        30.0
+      ]
+    }
+  }
+}

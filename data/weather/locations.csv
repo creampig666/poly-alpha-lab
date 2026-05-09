@@ -1,0 +1,4 @@
+location_name,latitude,longitude,station_id,source_location_name,timezone,notes,default_forecast_std,std_source
+Milan,45.6306,8.7281,LIMC,Malpensa Intl Airport Station,Europe/Rome,Wunderground LIMC station mapping for Milan weather markets,0.8,manual_research_required
+Sao Paulo,-23.5505,-46.6333,,Sao Paulo city centroid,America/Sao_Paulo,Sample city-level mapping for Sao Paulo weather markets,1.2,manual_research_required
+Paris,48.8566,2.3522,,Paris city centroid,Europe/Paris,Sample city-level mapping for Paris weather markets,2.0,manual_research_required
