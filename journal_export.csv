@@ -1,2 +1,0 @@
-id,created_at,updated_at,market_id,slug,question,category,candidate_score,candidate_grade,side,fair_yes_probability,probability_source,entry_price,entry_size,fee_per_share,expected_value_per_share,expected_profit,status,resolution_value,realized_pnl,brier_score,rationale,notes
-1,2026-05-07T12:14:38.420514+00:00,2026-05-07T12:14:38.420514+00:00,test-1,test-market,Test market?,economics,80.0,A,YES,0.6,manual,0.5,10.0,0.001,0.09899999999999998,0.9899999999999998,OPEN,,,,test entry,

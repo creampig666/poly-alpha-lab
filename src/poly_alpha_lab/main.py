@@ -14,6 +14,7 @@ from poly_alpha_lab.config import settings
 from poly_alpha_lab.daily_capture import (
     DailyWeatherCaptureConfig,
     daily_capture_summary_to_markdown,
+    daily_capture_terminal_summary_zh,
     run_daily_weather_capture,
 )
 from poly_alpha_lab.filters import filter_markets
@@ -289,6 +290,19 @@ def build_parser() -> argparse.ArgumentParser:
     daily_weather.add_argument("--dry-run", action="store_true")
     daily_weather.add_argument("--sizes", default="10,50,100")
     daily_weather.add_argument("--forecast-time-tolerance-seconds", type=float, default=120)
+    daily_weather.add_argument("--report-language", choices=["zh", "en"], default="zh")
+    report_group = daily_weather.add_mutually_exclusive_group()
+    report_group.add_argument(
+        "--write-markdown-report",
+        dest="write_markdown_report",
+        action="store_true",
+        default=True,
+    )
+    report_group.add_argument(
+        "--no-markdown-report",
+        dest="write_markdown_report",
+        action="store_false",
+    )
 
     weather_calibration = subparsers.add_parser(
         "weather-calibration",
@@ -812,11 +826,14 @@ def run(argv: list[str] | None = None) -> int:
                     dry_run=args.dry_run,
                     sizes=parse_csv_list(args.sizes, cast=float),
                     forecast_time_tolerance_seconds=args.forecast_time_tolerance_seconds,
+                    report_language=args.report_language,
+                    write_markdown_report=args.write_markdown_report,
                 )
             except ValueError as exc:
                 parser.error(str(exc))
             summary = run_daily_weather_capture(config)
             print(daily_capture_summary_to_markdown(summary))
+            print(daily_capture_terminal_summary_zh(summary))
             return summary.exit_code
 
     if args.command == "journal":

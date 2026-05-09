@@ -46,6 +46,7 @@ from poly_alpha_lab.weather_data import (
 WeatherProviderName = Literal["csv", "open-meteo"]
 WeatherModelName = Literal["normal", "student_t", "normal_mixture"]
 BucketModeName = Literal["rounded", "floor"]
+ReportLanguageName = Literal["zh", "en"]
 
 
 class DailyWeatherCaptureConfig(BaseModel):
@@ -71,6 +72,8 @@ class DailyWeatherCaptureConfig(BaseModel):
     dry_run: bool = False
     sizes: list[float] = Field(default_factory=lambda: [10.0, 50.0, 100.0])
     forecast_time_tolerance_seconds: float = Field(default=120.0, ge=0)
+    report_language: ReportLanguageName = "zh"
+    write_markdown_report: bool = True
 
 
 class DailyWeatherCaptureSummary(BaseModel):
@@ -84,6 +87,7 @@ class DailyWeatherCaptureSummary(BaseModel):
     strategy_candidates_path: str | None = None
     weather_alpha_path: str | None = None
     summary_path: str | None = None
+    markdown_report_path: str | None = None
     snapshot_db: str
     backtest_db: str
     strategy_candidates_count: int = 0
@@ -243,9 +247,12 @@ def run_daily_weather_capture(
     strategy_path = day_dir / f"strategy_candidates_{timestamp}.json"
     alpha_path = day_dir / f"weather_alpha_{timestamp}.json"
     summary_path = day_dir / f"capture_summary_{timestamp}.json"
+    report_path = day_dir / f"capture_report_{timestamp}_{config.report_language}.md"
     summary.strategy_candidates_path = str(strategy_path)
     summary.weather_alpha_path = str(alpha_path)
     summary.summary_path = str(summary_path)
+    if config.write_markdown_report:
+        summary.markdown_report_path = str(report_path)
 
     gamma_client = gamma_client or GammaClient(proxy=config.proxy, trust_env=config.trust_env)
     clob_client = clob_client or ClobClient(proxy=config.proxy, trust_env=config.trust_env)
@@ -263,7 +270,7 @@ def run_daily_weather_capture(
     except Exception as exc:
         summary.errors.append(f"strategy_scan_failed:{type(exc).__name__}:{exc}")
         summary.exit_code = 1
-        write_capture_summary(summary, summary_path)
+        finalize_capture_outputs(summary, summary_path, report_language=config.report_language)
         return summary
 
     weather_candidate_ids = _weather_candidate_ids(strategy_candidates)
@@ -314,7 +321,7 @@ def run_daily_weather_capture(
         except Exception as exc:
             summary.errors.append(f"weather_backtest_add_failed:{type(exc).__name__}:{exc}")
 
-    write_capture_summary(summary, summary_path)
+    finalize_capture_outputs(summary, summary_path, report_language=config.report_language)
     return summary
 
 
@@ -419,6 +426,40 @@ def write_capture_summary(
     )
 
 
+def finalize_capture_outputs(
+    summary: DailyWeatherCaptureSummary,
+    summary_path: str | Path,
+    *,
+    report_language: ReportLanguageName = "zh",
+) -> None:
+    """Write human and machine-readable capture outputs."""
+
+    if summary.markdown_report_path:
+        write_daily_capture_report(
+            summary,
+            summary.markdown_report_path,
+            language=report_language,
+        )
+    write_capture_summary(summary, summary_path)
+
+
+def write_daily_capture_report(
+    summary: DailyWeatherCaptureSummary,
+    output_path: str | Path,
+    *,
+    language: ReportLanguageName = "zh",
+) -> None:
+    path = Path(output_path)
+    if path.parent != Path("."):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    text = (
+        daily_capture_report_zh(summary)
+        if language == "zh"
+        else daily_capture_summary_to_markdown(summary)
+    )
+    path.write_text(text, encoding="utf-8")
+
+
 def daily_capture_summary_to_markdown(summary: DailyWeatherCaptureSummary) -> str:
     lines = [
         "# Daily Weather Forward Capture",
@@ -458,6 +499,211 @@ def daily_capture_summary_to_markdown(summary: DailyWeatherCaptureSummary) -> st
         lines.extend(["", "## Errors", ""])
         lines.extend(f"- `{error}`" for error in summary.errors)
     return "\n".join(lines)
+
+
+def daily_capture_report_zh(summary: DailyWeatherCaptureSummary) -> str:
+    """Render a human-oriented Chinese daily capture report."""
+
+    lines = [
+        "# Polymarket 天气策略每日记录报告",
+        "",
+        "## 1. 本次运行结论",
+        "",
+        f"- {_daily_capture_conclusion_zh(summary)}",
+        "",
+        "## 2. 运行基本信息",
+        "",
+        f"- 运行时间 captured_at：`{summary.captured_at}`",
+        f"- alpha 计算时间 alpha_as_of_time：`{summary.alpha_as_of_time or 'n/a'}`",
+        f"- 盘口快照时间 snapshot_captured_at：`{summary.snapshot_captured_at or 'n/a'}`",
+        f"- 是否 dry-run：`{summary.dry_run}`",
+        "- 数据类型：`forward replay capture`，不是 `historical backtest`",
+        f"- 网络模式：`{json.dumps(summary.network_mode, ensure_ascii=False)}`",
+        f"- 输出目录：`{summary.output_dir}`",
+        f"- summary JSON 路径：`{summary.summary_path or 'n/a'}`",
+        f"- strategy candidates JSON 路径：`{summary.strategy_candidates_path or 'n/a'}`",
+        f"- weather alpha JSON 路径：`{summary.weather_alpha_path or 'n/a'}`",
+        f"- snapshot DB 路径：`{summary.snapshot_db}`",
+        f"- backtest DB 路径：`{summary.backtest_db}`",
+        "",
+        "## 3. 数量摘要",
+        "",
+        "| 指标 | 数值 | 解释 |",
+        "|---|---:|---|",
+        f"| 策略候选市场数 | {summary.strategy_candidates_count} | 本次 strategy scan 找到的候选市场数量 |",
+        f"| 天气候选市场数 | {summary.weather_candidates_count} | 被识别为天气相关的市场数量 |",
+        f"| 天气 alpha signals | {summary.weather_alpha_signals_count} | 生成了模型概率和 edge 的天气信号数量 |",
+        f"| 尝试保存盘口数 | {summary.snapshots_attempted} | 尝试抓取 CLOB orderbook 的市场数 |",
+        f"| 成功保存盘口数 | {summary.snapshots_inserted} | 成功写入 SQLite 的盘口快照数 |",
+        f"| backtest 保存数 | {summary.backtest_saved} | 进入 forward replay paper dataset 的信号数 |",
+        f"| backtest 跳过数 | {summary.backtest_skipped} | 被 strict gate 跳过的信号数 |",
+        "",
+        "## 4. 今日是否有可交易信号？",
+        "",
+        _trade_signal_status_zh(summary),
+        "",
+        "## 5. 跳过原因解释",
+        "",
+    ]
+    if summary.skipped_reasons:
+        lines.extend(
+            [
+                "| 跳过原因组合 | 次数 | 中文解释 |",
+                "|---|---:|---|",
+                *(
+                    f"| `{reason}` | {count} | {_skip_reason_explanation_zh(reason)} |"
+                    for reason, count in sorted(summary.skipped_reasons.items())
+                ),
+            ]
+        )
+    else:
+        lines.append("无。")
+    lines.extend(
+        [
+            "",
+            "## 6. 错误与警告",
+            "",
+            *_errors_and_warnings_zh(summary),
+            "",
+            "## 7. 数据质量判断",
+            "",
+            *_data_quality_judgment_zh(summary),
+            "",
+            "## 8. 下一步建议",
+            "",
+            _next_step_zh(summary),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def daily_capture_terminal_summary_zh(summary: DailyWeatherCaptureSummary) -> str:
+    status = _run_status_zh(summary)
+    return "\n".join(
+        [
+            "",
+            f"本次运行{status}。",
+            f"- 天气候选市场：{summary.weather_candidates_count}",
+            f"- 已保存盘口快照：{summary.snapshots_inserted}",
+            f"- 天气 alpha signals：{summary.weather_alpha_signals_count}",
+            f"- 写入 paper dataset：{summary.backtest_saved}",
+            f"- 中文报告：{summary.markdown_report_path or 'n/a'}",
+        ]
+    )
+
+
+def _run_status_zh(summary: DailyWeatherCaptureSummary) -> str:
+    if summary.exit_code != 0:
+        return "失败"
+    if summary.errors:
+        return "部分成功"
+    return "成功"
+
+
+def _daily_capture_conclusion_zh(summary: DailyWeatherCaptureSummary) -> str:
+    if summary.exit_code != 0:
+        reason = summary.errors[0] if summary.errors else "未知错误"
+        return f"本次运行失败，原因是 {reason}。"
+    if summary.errors:
+        return (
+            f"本次运行部分成功，已保存 {summary.snapshots_inserted} 个天气盘口快照，"
+            f"但存在错误：{summary.errors[0]}。"
+        )
+    if summary.backtest_saved > 0:
+        return (
+            f"本次运行成功，并有 {summary.backtest_saved} 条 signal 写入 "
+            "forward replay backtest。"
+        )
+    if summary.weather_alpha_signals_count > 0:
+        return (
+            f"本次运行成功，生成 {summary.weather_alpha_signals_count} 个天气 alpha signals，"
+            "但均未通过 strict gate。"
+        )
+    return (
+        f"本次运行成功，已保存 {summary.snapshots_inserted} 个天气盘口快照，"
+        "但没有生成可入库的 paper trade。"
+    )
+
+
+def _trade_signal_status_zh(summary: DailyWeatherCaptureSummary) -> str:
+    if summary.backtest_saved > 0:
+        return "今天有 signal 进入 forward replay paper dataset。注意这仍然不是真实交易。"
+    if summary.weather_alpha_signals_count > 0:
+        return "今天有天气 alpha signal，但没有进入 strict paper dataset。主要原因见下一节。"
+    return "今天没有生成天气 alpha signal。这不是错误，只表示没有市场满足当前模型和规则条件。"
+
+
+def _errors_and_warnings_zh(summary: DailyWeatherCaptureSummary) -> list[str]:
+    rows: list[str] = []
+    if not summary.errors and not summary.warnings and not summary.timing_warnings:
+        return ["本次没有记录到运行错误。"]
+    if summary.errors:
+        rows.extend(["错误：", *[f"- `{error}`" for error in summary.errors]])
+    if summary.warnings:
+        rows.extend(["警告：", *[f"- `{warning}`" for warning in summary.warnings]])
+    if summary.timing_warnings:
+        rows.extend(["时间警告：", *[f"- `{warning}`" for warning in summary.timing_warnings]])
+    return rows
+
+
+def _data_quality_judgment_zh(summary: DailyWeatherCaptureSummary) -> list[str]:
+    rows: list[str] = []
+    if summary.errors:
+        rows.append("- 运行记录到错误，需要先排查数据管线。")
+    if summary.snapshots_inserted > 0:
+        rows.append("- 盘口快照记录成功。")
+    else:
+        rows.append("- 没有成功记录盘口，需要检查网络或市场数量。")
+    if summary.backtest_saved > 0:
+        rows.append("- 今天有 paper entry，后续需等待市场结算后 resolve。")
+    else:
+        rows.append("- 今天没有 strict paper entry。")
+    return rows
+
+
+def _next_step_zh(summary: DailyWeatherCaptureSummary) -> str:
+    if summary.errors:
+        return "先修数据管线，不要分析策略收益。"
+    if summary.backtest_saved > 0:
+        return "后续等市场结算后，使用 weather-backtest resolve 填入 actual/resolution，再看 PnL 和 Brier。"
+    if summary.weather_alpha_signals_count > 0:
+        return "建议累计 7 天后统计 skipped reasons，再决定是否调整 station mapping、bucket boundary 或 edge threshold。"
+    return "明天继续记录即可。不要因为单日没有 signal 就调整策略。"
+
+
+_SKIP_REASON_TRANSLATIONS: dict[str, str] = {
+    "no_paper_side": "模型没有给出 YES/NO 方向，通常是 edge 没超过阈值。",
+    "signal_status_not_valid": "信号状态不是 VALID，存在数据、规则或来源风险。",
+    "forecast_issued_within_live_capture_tolerance": (
+        "live capture 中 forecast 时间略晚于 as_of_time，但在容忍窗口内，不视为未来函数。"
+    ),
+    "forecast_after_as_of_time": "forecast 时间晚于 as_of_time，存在未来数据风险。",
+    "forecast_issued_after_as_of_time": "forecast 时间晚于 as_of_time，存在未来数据风险。",
+    "station_not_matched": "模型 forecast 站点与 Polymarket 结算站点不一致。",
+    "bucket_boundary_not_confirmed": "市场是温度桶，但具体数值边界没有被规则明确确认。",
+    "sample_or_manual_forecast": "forecast 数据是 sample/manual，不可作为严格数据源。",
+    "manual_std_method": "forecast_std 是手动假设，不可作为严格校准。",
+    "calibration_quality_insufficient": "历史校准样本质量不足。",
+    "calibration_samples_too_low": "校准样本数太少。",
+}
+
+
+def _skip_reason_explanation_zh(reason: str) -> str:
+    matches = [
+        explanation
+        for token, explanation in _SKIP_REASON_TRANSLATIONS.items()
+        if token in reason
+    ]
+    if matches:
+        return " ".join(dict.fromkeys(matches))
+    if reason.startswith("orderbook_snapshot_failed"):
+        return "盘口快照抓取失败，通常是 CLOB orderbook 暂时不可用或网络异常。"
+    if reason.startswith("market_fetch_failed"):
+        return "市场详情拉取失败，通常是 Gamma API 或网络异常。"
+    if reason.startswith("market_token_missing"):
+        return "市场缺少 YES/NO CLOB token，无法安全抓取盘口。"
+    return "未配置中文解释，请查看原始 reason。"
 
 
 def _default_strategy_scan(

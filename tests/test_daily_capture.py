@@ -10,7 +10,9 @@ from poly_alpha_lab.daily_capture import (
     DailyWeatherCaptureSummary,
     PolymarketSnapshotStore,
     capture_orderbook_snapshots,
+    daily_capture_report_zh,
     run_daily_weather_capture,
+    write_daily_capture_report,
     write_capture_summary,
 )
 from poly_alpha_lab.models import Market, OrderBook, OrderLevel
@@ -145,6 +147,7 @@ def test_capture_summary_json_fields_complete(tmp_path):
         "output_dir",
         "strategy_candidates_path",
         "weather_alpha_path",
+        "markdown_report_path",
         "snapshot_db",
         "backtest_db",
         "strategy_candidates_count",
@@ -162,6 +165,60 @@ def test_capture_summary_json_fields_complete(tmp_path):
         "network_mode",
     ]:
         assert key in data
+
+
+def test_daily_capture_writes_chinese_markdown_report(tmp_path):
+    report_path = tmp_path / "capture_report_zh.md"
+    summary = DailyWeatherCaptureSummary(
+        captured_at="2026-05-09T01:00:00Z",
+        alpha_as_of_time="2026-05-09T01:01:00Z",
+        snapshot_captured_at="2026-05-09T01:02:00Z",
+        output_dir=str(tmp_path),
+        snapshot_db=str(tmp_path / "snap.sqlite"),
+        backtest_db=str(tmp_path / "backtest.sqlite"),
+        summary_path=str(tmp_path / "summary.json"),
+        strategy_candidates_path=str(tmp_path / "strategy.json"),
+        weather_alpha_path=str(tmp_path / "alpha.json"),
+        markdown_report_path=str(report_path),
+        strategy_candidates_count=5,
+        weather_candidates_count=2,
+        weather_alpha_signals_count=1,
+        snapshots_attempted=2,
+        snapshots_inserted=2,
+        backtest_saved=0,
+        backtest_skipped=1,
+        skipped_reasons={
+            "no_paper_side": 1,
+            "forecast_issued_within_live_capture_tolerance": 1,
+        },
+    )
+
+    write_daily_capture_report(summary, report_path)
+    text = report_path.read_text(encoding="utf-8")
+
+    assert "# Polymarket 天气策略每日记录报告" in text
+    assert "## 1. 本次运行结论" in text
+    assert "## 3. 数量摘要" in text
+    assert "## 5. 跳过原因解释" in text
+    assert "## 8. 下一步建议" in text
+    assert "模型没有给出 YES/NO 方向" in text
+    assert "不视为未来函数" in text
+    assert "本次没有记录到运行错误。" in text
+
+
+def test_live_tolerance_reason_is_not_translated_as_future_data_error(tmp_path):
+    summary = DailyWeatherCaptureSummary(
+        captured_at="2026-05-09T01:00:00Z",
+        output_dir=str(tmp_path),
+        snapshot_db=str(tmp_path / "snap.sqlite"),
+        backtest_db=str(tmp_path / "backtest.sqlite"),
+        skipped_reasons={"forecast_issued_within_live_capture_tolerance": 1},
+    )
+
+    report = daily_capture_report_zh(summary)
+
+    assert "不视为未来函数" in report
+    assert "存在未来数据风险" not in report
 
 
 def test_daily_capture_live_mode_uses_alpha_start_as_of_time(tmp_path):

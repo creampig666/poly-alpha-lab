@@ -1,4 +1,0 @@
-location,station_id,metric,target_date,target_datetime,forecast_issued_at,forecast_mean,actual_value,unit,forecast_source,forecast_model,source_location_name,latitude,longitude,notes
-Milan,LIMC,high_temperature,2026-05-08,2026-05-08T23:59:00Z,2026-05-08T00:00:00Z,23,24,C,open_meteo,sample_history_model,Malpensa Intl Airport Station,45.6306,8.7281,small fixture row for calibration smoke
-Milan,LIMC,high_temperature,2026-05-07,2026-05-07T23:59:00Z,2026-05-07T00:00:00Z,22,24,C,open_meteo,sample_history_model,Malpensa Intl Airport Station,45.6306,8.7281,small fixture row for calibration smoke
-Milan,LIMC,high_temperature,2026-05-06,2026-05-06T23:59:00Z,2026-05-06T00:00:00Z,25,25,C,open_meteo,sample_history_model,Malpensa Intl Airport Station,45.6306,8.7281,small fixture row for calibration smoke

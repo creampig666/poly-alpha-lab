@@ -10,5 +10,38 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Local editor/agent state
+.claude/
+
+# Local scratch/test output
+py_tmp_dir/
+tmp_test_dir/
+
+# Runtime databases and generated captures
 data/*.sqlite
 data/*.sqlite-*
+data/daily/
+data/weather/cache/
+data/weather/dataset_cache*/
+data/weather/debug_cache*/
+
+# Generated weather datasets, diagnostics, and audits
+data/weather/calibration_summary*.csv
+data/weather/calibration_summary*.json
+data/weather/forecast_actual_history*.csv
+data/weather/network_debug_report*.json
+data/weather/provider_debug_report*.json
+data/weather/provider_semantics_audit*.json
+
+# Local journal and generated scanner outputs
+journal_draft.json
+journal_export.csv
+strategy_candidates*.json
+weather_alpha*.json
+weather_model_diagnostics.csv
+
+# Keep hand-maintained example/config weather inputs tracked.
+!data/weather/locations.csv
+!data/weather/weather_forecasts.csv
+!data/weather/data_source_options.md
