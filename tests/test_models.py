@@ -89,6 +89,16 @@ def test_outcome_prices_length_mismatch_raises_market_structure_error() -> None:
         )
 
 
+def test_direct_market_constructor_validates_outcome_vector_lengths() -> None:
+    with pytest.raises(MarketStructureError, match="outcomePrices length 1"):
+        Market(
+            id="bad-direct-prices",
+            outcomes=["Yes", "No"],
+            outcomePrices=[0.5],
+            clobTokenIds=["yes-token", "no-token"],
+        )
+
+
 def test_clob_token_ids_length_mismatch_raises_market_structure_error() -> None:
     with pytest.raises(MarketStructureError, match="clobTokenIds length 1"):
         Market.model_validate(
@@ -99,6 +109,22 @@ def test_clob_token_ids_length_mismatch_raises_market_structure_error() -> None:
                 "clobTokenIds": ["yes-token"],
             }
         )
+
+
+def test_market_raw_capture_does_not_self_nest_existing_raw() -> None:
+    market = Market.model_validate(
+        {
+            "id": "raw-market",
+            "outcomes": ["Yes", "No"],
+            "outcomePrices": [0.25, 0.75],
+            "clobTokenIds": ["yes-token", "no-token"],
+            "raw": {"raw": {"raw": "nested"}, "id": "old"},
+        }
+    )
+
+    assert "raw" not in market.raw
+    assert market.raw["id"] == "raw-market"
+    assert market.raw["outcomePrices"] == [0.25, 0.75]
 
 
 def test_orderbook_parses_clob_response_and_sorts_levels() -> None:

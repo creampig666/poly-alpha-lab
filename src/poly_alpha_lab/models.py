@@ -42,7 +42,7 @@ def _list_from_jsonish(value: Any) -> list[Any]:
     return []
 
 
-class MarketStructureError(ValueError):
+class MarketStructureError(Exception):
     """Raised when a Gamma market cannot be mapped to an explicit YES/NO structure."""
 
 
@@ -146,16 +146,15 @@ class Market(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def capture_raw(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "raw" not in data:
+        if isinstance(data, dict):
             data = dict(data)
-            data["raw"] = dict(data)
+            data["raw"] = {key: value for key, value in data.items() if key != "raw"}
         return data
 
-    @classmethod
-    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> "Market":
-        market = super().model_validate(obj, *args, **kwargs)
-        market._validate_outcome_vector_lengths()
-        return market
+    @model_validator(mode="after")
+    def validate_outcome_vector_lengths(self) -> "Market":
+        self._validate_outcome_vector_lengths()
+        return self
 
     def _validate_outcome_vector_lengths(self) -> None:
         if self.outcome_prices and len(self.outcome_prices) != len(self.outcomes):

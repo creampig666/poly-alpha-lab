@@ -17,6 +17,9 @@ from poly_alpha_lab.weather_data import CsvWeatherDataProvider, WeatherForecast
 from poly_alpha_lab.resolution_analyzer import ResolutionAnalysis
 
 
+TEST_AS_OF_TIME = "2026-05-08T01:00:00Z"
+
+
 def strategy_candidate(**overrides):
     data = {
         "market_id": "weather-1",
@@ -82,7 +85,13 @@ def test_weather_alpha_yes_edge_calculation() -> None:
     candidate = strategy_candidate()
     classification = classify_strategy_candidate(candidate)
 
-    signal = build_weather_alpha_signal(candidate, classification, forecast(), edge_threshold=0.05)
+    signal = build_weather_alpha_signal(
+        candidate,
+        classification,
+        forecast(),
+        edge_threshold=0.05,
+        as_of_time=TEST_AS_OF_TIME,
+    )
 
     assert signal.suggested_paper_side == "YES"
     assert signal.yes_model_edge == pytest.approx(signal.model_p_yes - signal.yes_breakeven)
@@ -111,6 +120,7 @@ def test_weather_alpha_no_edge_calculation() -> None:
             forecast_std=1,
         ),
         edge_threshold=0.05,
+        as_of_time=TEST_AS_OF_TIME,
     )
 
     assert signal.suggested_paper_side == "NO"
@@ -130,6 +140,7 @@ def test_weather_alpha_side_none_when_edge_below_threshold() -> None:
         classification,
         forecast(forecast_mean=24, forecast_std=1),
         edge_threshold=0.05,
+        as_of_time=TEST_AS_OF_TIME,
     )
 
     assert signal.suggested_paper_side == "NONE"
@@ -173,7 +184,11 @@ def test_run_weather_alpha_scan_with_csv(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    result = run_weather_alpha_scan(strategy_path, CsvWeatherDataProvider(csv_path))
+    result = run_weather_alpha_scan(
+        strategy_path,
+        CsvWeatherDataProvider(csv_path),
+        as_of_time=TEST_AS_OF_TIME,
+    )
 
     assert result.weather_candidate_count == 1
     assert result.threshold_candidate_count == 1
@@ -196,7 +211,11 @@ def test_run_weather_alpha_scan_counts_exact_bucket_candidate(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    result = run_weather_alpha_scan(strategy_path, CsvWeatherDataProvider(csv_path))
+    result = run_weather_alpha_scan(
+        strategy_path,
+        CsvWeatherDataProvider(csv_path),
+        as_of_time=TEST_AS_OF_TIME,
+    )
 
     assert result.weather_candidate_count == 1
     assert result.threshold_candidate_count == 0
@@ -213,7 +232,11 @@ def test_weather_alpha_output_json_works(tmp_path) -> None:
         "2026-05-09,Sao Paulo,high_temperature,22,1,31,C,2026-05-07T00:00:00Z\n",
         encoding="utf-8",
     )
-    result = run_weather_alpha_scan(strategy_path, CsvWeatherDataProvider(csv_path))
+    result = run_weather_alpha_scan(
+        strategy_path,
+        CsvWeatherDataProvider(csv_path),
+        as_of_time=TEST_AS_OF_TIME,
+    )
     output = tmp_path / "signals.json"
 
     count = write_weather_alpha_signals_json(result, output)
@@ -230,6 +253,7 @@ def test_weather_alpha_report_uses_paper_side_not_buy_sell() -> None:
         classify_strategy_candidate(candidate),
         forecast(),
         edge_threshold=0.05,
+        as_of_time=TEST_AS_OF_TIME,
     )
 
     report = weather_alpha_report(type("Result", (), {"weather_candidate_count": 1, "signals": [signal], "skipped": []})())
