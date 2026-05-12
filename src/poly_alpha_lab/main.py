@@ -17,6 +17,12 @@ from poly_alpha_lab.daily_capture import (
     daily_capture_terminal_summary_zh,
     run_daily_weather_capture,
 )
+from poly_alpha_lab.daily_diagnostics import (
+    diagnose_weather_daily_captures,
+    weather_diagnostics_report_zh,
+    write_weather_diagnostics_json,
+    write_weather_diagnostics_markdown,
+)
 from poly_alpha_lab.filters import filter_markets
 from poly_alpha_lab.journal import JournalEntry, ResearchJournal
 from poly_alpha_lab.liquidity import BinaryMarketLiquidity
@@ -303,6 +309,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="write_markdown_report",
         action="store_false",
     )
+
+    diagnose_daily_weather = daily_capture_subparsers.add_parser(
+        "diagnose-weather",
+        help="Diagnose recent daily weather capture funnel outputs.",
+    )
+    diagnose_daily_weather.add_argument("--days", type=int, default=7)
+    diagnose_daily_weather.add_argument("--daily-dir", default="data/daily")
+    diagnose_daily_weather.add_argument("--output-md", default="data/daily/weather_diagnostics_last7d_zh.md")
+    diagnose_daily_weather.add_argument("--output-json", default="data/daily/weather_diagnostics_last7d.json")
+    diagnose_daily_weather.add_argument("--language", choices=["zh"], default="zh")
 
     weather_calibration = subparsers.add_parser(
         "weather-calibration",
@@ -835,6 +851,23 @@ def run(argv: list[str] | None = None) -> int:
             print(daily_capture_summary_to_markdown(summary))
             print(daily_capture_terminal_summary_zh(summary))
             return summary.exit_code
+        if args.daily_capture_command == "diagnose-weather":
+            result = diagnose_weather_daily_captures(
+                args.daily_dir,
+                days=args.days,
+                language=args.language,
+            )
+            write_weather_diagnostics_json(result, args.output_json)
+            write_weather_diagnostics_markdown(result, args.output_md, language=args.language)
+            print(weather_diagnostics_report_zh(result))
+            print(f"Wrote weather diagnostics markdown to `{args.output_md}`")
+            print(f"Wrote weather diagnostics JSON to `{args.output_json}`")
+            bottlenecks = result.get("top_bottlenecks", [])
+            if bottlenecks:
+                print("Top bottlenecks:")
+                for item in bottlenecks[:3]:
+                    print(f"- {item['reason']}: {item['count']}")
+            return 0
 
     if args.command == "journal":
         journal = ResearchJournal(settings.journal_db_path)
