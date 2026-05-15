@@ -108,6 +108,22 @@ def test_exact_bucket_probability_is_not_real_valued_equality_zero() -> None:
     assert result.model_p_yes > 0
 
 
+def test_temperature_range_bucket_probability() -> None:
+    result = estimate_temperature_threshold_probability(
+        forecast=forecast(forecast_mean=72.5, forecast_std=1, unit="F"),
+        threshold=72,
+        comparator="range_bucket",
+        threshold_unit="F",
+        range_lower=72,
+        range_upper=73,
+    )
+
+    assert result.model_p_yes == pytest.approx(0.3829, rel=1e-3)
+    assert result.range_lower_bound == pytest.approx(72)
+    assert result.range_upper_bound == pytest.approx(73)
+    assert result.range_boundary_assumption == "[lower, upper)"
+
+
 def test_actual_value_is_not_used_for_model_probability() -> None:
     base = forecast(actual_value=10)
     changed_actual = forecast(actual_value=100)

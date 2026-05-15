@@ -174,6 +174,37 @@ def test_weather_alpha_generates_signal_for_exact_bucket_candidate() -> None:
     assert "requires manual validation before paper entry" in signal.journal_draft_payload["rationale"]
 
 
+def test_weather_alpha_generates_signal_for_range_bucket_candidate() -> None:
+    candidate = strategy_candidate(
+        question="Will the highest temperature in Chicago be between 72-73\u00b0F on May 12?",
+        slug="chicago-high-between-72-73f",
+        yes_breakeven_probability=0.2,
+        no_required_yes_probability_upper_bound=0.1,
+    )
+    classification = classify_strategy_candidate(candidate)
+
+    signal = build_weather_alpha_signal(
+        candidate,
+        classification,
+        forecast(
+            date="2026-05-12",
+            location="Chicago",
+            forecast_mean=72.5,
+            forecast_std=1,
+            unit="F",
+        ),
+        edge_threshold=0.05,
+        as_of_time=TEST_AS_OF_TIME,
+    )
+
+    assert signal.range_lower_bound == pytest.approx(72)
+    assert signal.range_upper_bound == pytest.approx(73)
+    assert signal.model_p_yes > 0
+    assert signal.signal_status == "NEEDS_MANUAL_REVIEW"
+    assert "range_boundary_assumption_unconfirmed" in signal.validation_warnings
+    assert "range_interval=[72, 73)F" in signal.journal_draft_payload["rationale"]
+
+
 def test_run_weather_alpha_scan_with_csv(tmp_path) -> None:
     strategy_path = tmp_path / "strategy.json"
     strategy_path.write_text(json.dumps([strategy_candidate()]), encoding="utf-8")
@@ -220,6 +251,31 @@ def test_run_weather_alpha_scan_counts_exact_bucket_candidate(tmp_path) -> None:
     assert result.weather_candidate_count == 1
     assert result.threshold_candidate_count == 0
     assert result.exact_bucket_candidate_count == 1
+    assert len(result.signals) == 1
+
+
+def test_run_weather_alpha_scan_counts_range_bucket_candidate(tmp_path) -> None:
+    strategy_path = tmp_path / "strategy.json"
+    candidate = strategy_candidate(
+        question="Will the highest temperature in Chicago be between 72-73\u00b0F on May 12?",
+        slug="chicago-high-between-72-73f",
+    )
+    strategy_path.write_text(json.dumps([candidate]), encoding="utf-8")
+    csv_path = tmp_path / "weather.csv"
+    csv_path.write_text(
+        "date,location,metric,forecast_mean,forecast_std,actual_value,unit,forecast_issued_at\n"
+        "2026-05-12,Chicago,high_temperature,72.5,1,,F,2026-05-08T00:00:00Z\n",
+        encoding="utf-8",
+    )
+
+    result = run_weather_alpha_scan(
+        strategy_path,
+        CsvWeatherDataProvider(csv_path),
+        as_of_time=TEST_AS_OF_TIME,
+    )
+
+    assert result.weather_candidate_count == 1
+    assert result.range_bucket_candidate_count == 1
     assert len(result.signals) == 1
 
 

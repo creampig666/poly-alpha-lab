@@ -1,7 +1,11 @@
 import json
 
 from poly_alpha_lab.daily_diagnostics import (
+    diagnose_missing_forecasts,
     diagnose_weather_daily_captures,
+    missing_forecasts_report_zh,
+    write_missing_forecasts_csv,
+    write_missing_forecasts_markdown,
     weather_diagnostics_report_zh,
     write_weather_diagnostics_json,
     write_weather_diagnostics_markdown,
@@ -148,3 +152,86 @@ def test_diagnostics_writes_markdown_and_json(tmp_path):
 
     assert json.loads(output_json.read_text(encoding="utf-8"))["totals"]["weather_candidates"] == 1
     assert "Polymarket 天气 Daily Capture 诊断报告" in output_md.read_text(encoding="utf-8")
+
+
+def test_missing_forecasts_report_writes_details_and_pending_locations(tmp_path):
+    daily_dir = tmp_path / "daily"
+    day = daily_dir / "2026-05-10"
+    _write_json(day / "capture_summary_a.json", _summary(day, "a"))
+    _write_json(
+        day / "strategy_candidates_a.json",
+        [
+            _strategy_candidate(
+                "weather-sbgr",
+                "Will the highest temperature in Sao Paulo be 24掳C on May 10?",
+            )
+        ],
+    )
+    _write_json(day / "weather_alpha_a.json", [])
+    locations = tmp_path / "locations.csv"
+    locations.write_text(
+        "location_name,latitude,longitude,station_id,source_location_name,timezone,notes\n",
+        encoding="utf-8",
+    )
+    pending = tmp_path / "locations_pending.csv"
+
+    result = diagnose_missing_forecasts(
+        daily_dir,
+        days=7,
+        locations_file=locations,
+        pending_output=pending,
+    )
+    report = missing_forecasts_report_zh(result)
+
+    assert result["records"][0]["reason"] == "location_not_in_locations_csv"
+    assert "Top missing locations/stations" in report
+    assert pending.exists()
+
+
+def test_missing_forecasts_writes_markdown_and_csv(tmp_path):
+    result = {
+        "days": 7,
+        "records": [
+            {
+                "date": "2026-05-10",
+                "captured_at": "2026-05-10T12:00:00Z",
+                "market_id": "weather-1",
+                "slug": "weather-1",
+                "question": "Will the highest temperature in Milan be 24掳C on May 10?",
+                "category": "weather",
+                "parsed_market_type": "weather_temperature_exact_bucket",
+                "parsed_location_name": "Milan",
+                "metric": "high_temperature",
+                "target_date": "2026-05-10",
+                "threshold": 24,
+                "range_lower": None,
+                "range_upper": None,
+                "unit": "C",
+                "resolution_source": "",
+                "extracted_station_id": "LIMC",
+                "extracted_station_name": "Milan Malpensa Intl Airport Station",
+                "forecast_lookup_key": "LIMC:2026-05-10:high_temperature",
+                "locations_csv_match": "no",
+                "reason": "station_not_in_locations_csv",
+            }
+        ],
+        "reason_counts": {"station_not_in_locations_csv": 1},
+        "locations_pending_path": str(tmp_path / "locations_pending.csv"),
+        "locations_pending_new_or_updated": 1,
+        "top_missing_locations_or_stations": [
+            {
+                "location_or_station": "LIMC",
+                "count": 1,
+                "example_question": "Will the highest temperature in Milan be 24掳C on May 10?",
+                "suggested_action": "人工补 station_id 对应机场站点经纬度",
+            }
+        ],
+    }
+    output_csv = tmp_path / "missing.csv"
+    output_md = tmp_path / "missing.md"
+
+    write_missing_forecasts_csv(result, output_csv)
+    write_missing_forecasts_markdown(result, output_md)
+
+    assert "station_not_in_locations_csv" in output_csv.read_text(encoding="utf-8")
+    assert "天气 Forecast 缺失明细诊断" in output_md.read_text(encoding="utf-8")

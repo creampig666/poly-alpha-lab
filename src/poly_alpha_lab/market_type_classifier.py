@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 class MarketType(str, Enum):
     weather_temperature_threshold = "weather_temperature_threshold"
     weather_temperature_exact_bucket = "weather_temperature_exact_bucket"
+    weather_temperature_range_bucket = "weather_temperature_range_bucket"
     weather_precipitation_threshold = "weather_precipitation_threshold"
     crypto_price_threshold = "crypto_price_threshold"
     equity_price_threshold = "equity_price_threshold"
@@ -33,6 +34,7 @@ ThresholdComparator = Literal[
     "at_or_above",
     "at_or_below",
     "exact_bucket",
+    "range_bucket",
 ]
 TemperatureUnit = Literal["C", "F"]
 
@@ -72,6 +74,8 @@ class MarketClassification(BaseModel):
     metric: TemperatureMetric | None = None
     comparator: ThresholdComparator | None = None
     threshold_value: float | None = None
+    range_lower: float | None = None
+    range_upper: float | None = None
     unit: TemperatureUnit | None = None
     target_date: str | None = None
     confidence: float = Field(default=0.0, ge=0, le=1)
@@ -107,6 +111,7 @@ def classify_market_text(
     """
 
     text = _normalize_text(" ".join(part for part in (question, slug or "") if part))
+    text = text.replace("°", "").replace("掳", "").replace("бу", "")
     warnings: list[str] = []
 
     if not _looks_like_temperature_market(text, category):
@@ -117,8 +122,13 @@ def classify_market_text(
         )
 
     metric = _extract_metric(text)
-    comparator = _extract_comparator(text)
-    threshold_value, unit = _extract_threshold(text)
+    range_lower, range_upper, range_unit = _extract_range(text)
+    comparator = "range_bucket" if range_lower is not None else _extract_comparator(text)
+    threshold_value, unit = (
+        (range_lower, range_unit)
+        if range_lower is not None
+        else _extract_threshold(text)
+    )
     target_date = _extract_target_date(
         text,
         end_date=end_date,
@@ -148,17 +158,20 @@ def classify_market_text(
             metric=metric,
             comparator=comparator,
             threshold_value=threshold_value,
+            range_lower=range_lower,
+            range_upper=range_upper,
             unit=unit,
             target_date=target_date,
             confidence=0.35,
             warnings=warnings,
         )
 
-    market_type = (
-        MarketType.weather_temperature_exact_bucket
-        if comparator == "exact_bucket"
-        else MarketType.weather_temperature_threshold
-    )
+    if comparator == "exact_bucket":
+        market_type = MarketType.weather_temperature_exact_bucket
+    elif comparator == "range_bucket":
+        market_type = MarketType.weather_temperature_range_bucket
+    else:
+        market_type = MarketType.weather_temperature_threshold
 
     return MarketClassification(
         market_type=market_type,
@@ -166,6 +179,8 @@ def classify_market_text(
         metric=metric,
         comparator=comparator,
         threshold_value=threshold_value,
+        range_lower=range_lower,
+        range_upper=range_upper,
         unit=unit,
         target_date=target_date,
         confidence=0.95,
@@ -208,6 +223,9 @@ def _extract_metric(text: str) -> TemperatureMetric | None:
 
 
 def _extract_comparator(text: str) -> ThresholdComparator | None:
+    range_lower, _, _ = _extract_range(text)
+    if range_lower is not None:
+        return "range_bucket"
     if re.search(r"\b(or below|or lower|at most|no more than|equal to or below)\b", text):
         return "at_or_below"
     if re.search(r"\b(or above|or higher|at least|no less than|equal to or above)\b", text):
@@ -223,6 +241,28 @@ def _extract_comparator(text: str) -> ThresholdComparator | None:
     ):
         return "exact_bucket"
     return None
+
+
+def _extract_range(text: str) -> tuple[float | None, float | None, TemperatureUnit | None]:
+    unit_pattern = r"(?:°|掳|бу)?\s*(celsius|fahrenheit|c|f)\b"
+    patterns = [
+        rf"\bbetween\s+(-?\d+(?:\.\d+)?)\s*(?:°|掳)?\s*(?:celsius|fahrenheit|c|f)?\s*(?:-|and|to)\s*(-?\d+(?:\.\d+)?)\s*{unit_pattern}",
+        rf"\bfrom\s+(-?\d+(?:\.\d+)?)\s*(?:°|掳)?\s*(?:celsius|fahrenheit|c|f)?\s+to\s+(-?\d+(?:\.\d+)?)\s*{unit_pattern}",
+        rf"\bin\s+the\s+range\s+(-?\d+(?:\.\d+)?)\s*(?:°|掳)?\s*(?:celsius|fahrenheit|c|f)?\s*(?:-|to)\s*(-?\d+(?:\.\d+)?)\s*{unit_pattern}",
+        rf"\b(-?\d+(?:\.\d+)?)\s*(?:°|掳)?\s*(?:celsius|fahrenheit|c|f)?\s*-\s*(-?\d+(?:\.\d+)?)\s*{unit_pattern}",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        lower = float(match.group(1))
+        upper = float(match.group(2))
+        unit_text = match.group(3).casefold()
+        unit: TemperatureUnit = "C" if unit_text in {"c", "celsius"} else "F"
+        if upper < lower:
+            lower, upper = upper, lower
+        return lower, upper, unit
+    return None, None, None
 
 
 def _extract_threshold(text: str) -> tuple[float | None, TemperatureUnit | None]:

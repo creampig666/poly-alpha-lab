@@ -47,6 +47,18 @@ def test_locations_csv_resolves_milan_and_sao_paulo(tmp_path) -> None:
     assert sao_paulo.latitude == pytest.approx(-23.5505)
 
 
+def test_location_resolver_prefers_station_id(tmp_path) -> None:
+    locations = tmp_path / "locations.csv"
+    write_locations(locations)
+    resolver = LocationResolver(locations)
+
+    resolved = resolver.resolve("Sao Paulo", station_id="LIMC")
+
+    assert resolved is not None
+    assert resolved.location_name == "Milan"
+    assert resolved.station_id == "LIMC"
+
+
 def test_open_meteo_cache_key_is_stable() -> None:
     first = open_meteo_cache_key(
         location="Milan",
@@ -89,6 +101,29 @@ def test_open_meteo_provider_mock_response(tmp_path) -> None:
     assert forecast.std_method == "configured_std"
     assert forecast.cache_key is not None
     assert forecast.raw_data_reference is not None
+
+
+def test_open_meteo_station_missing_falls_back_to_city_centroid_warning(tmp_path) -> None:
+    locations = tmp_path / "locations.csv"
+    cache_dir = tmp_path / "cache"
+    write_locations(locations)
+    provider = OpenMeteoForecastProvider(
+        location_resolver=LocationResolver(locations),
+        cache_dir=cache_dir,
+        fetcher=lambda params: open_meteo_response(24.5),
+        now=fixed_now,
+    )
+
+    forecast = provider.get_forecast(
+        "Sao Paulo",
+        "2026-05-08",
+        "high_temperature",
+        station_id="SBGR",
+    )
+
+    assert forecast is not None
+    assert "station_forecast_fallback_to_city_centroid" in forecast.provider_warnings
+    assert forecast.station_id is None
 
 
 def test_open_meteo_provider_uses_cache_without_refetch(tmp_path) -> None:

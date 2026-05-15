@@ -16,6 +16,7 @@ Comparator = Literal[
     "at_or_below",
     "equals",
     "exact_bucket",
+    "range_bucket",
 ]
 BucketMode = Literal["rounded", "floor"]
 TemperatureUnit = Literal["C", "F"]
@@ -35,6 +36,9 @@ class WeatherProbabilityResult(BaseModel):
     bucket_lower_bound: float | None = None
     bucket_upper_bound: float | None = None
     bucket_assumption: str | None = None
+    range_lower_bound: float | None = None
+    range_upper_bound: float | None = None
+    range_boundary_assumption: str | None = None
     weather_model: WeatherModel = "normal"
     model_parameters: dict[str, Any] = Field(default_factory=dict)
     distribution_assumption: str = "normal forecast error"
@@ -52,6 +56,8 @@ def estimate_temperature_threshold_probability(
     student_t_df: float = 5,
     mixture_tail_weight: float = 0.10,
     mixture_tail_scale: float = 2.5,
+    range_lower: float | None = None,
+    range_upper: float | None = None,
 ) -> WeatherProbabilityResult:
     """Estimate YES probability using a configurable forecast error distribution."""
 
@@ -85,6 +91,9 @@ def estimate_temperature_threshold_probability(
     bucket_lower_bound: float | None = None
     bucket_upper_bound: float | None = None
     bucket_assumption: str | None = None
+    range_lower_bound: float | None = None
+    range_upper_bound: float | None = None
+    range_boundary_assumption: str | None = None
     result_bucket_mode: BucketMode | None = None
     if comparator in {"below", "at_or_below"}:
         probability = cdf(threshold)
@@ -109,6 +118,16 @@ def estimate_temperature_threshold_probability(
             "Exact temperature market is modeled as integer bucket, "
             "not literal real-valued equality."
         )
+    elif comparator == "range_bucket":
+        if range_lower is None or range_upper is None:
+            raise WeatherProbabilityError("range_bucket requires range_lower and range_upper")
+        range_lower_bound = min(range_lower, range_upper)
+        range_upper_bound = max(range_lower, range_upper)
+        if range_upper_bound <= range_lower_bound:
+            raise WeatherProbabilityError("range_bucket upper bound must be greater than lower bound")
+        range_boundary_assumption = "[lower, upper)"
+        probability = cdf(range_upper_bound) - cdf(range_lower_bound)
+        comparison = "Temperature range bucket is modeled as [lower, upper)."
     else:
         raise WeatherProbabilityError(f"unsupported comparator: {comparator}")
 
@@ -128,6 +147,11 @@ def estimate_temperature_threshold_probability(
             comparison,
             f"bucket_mode={bucket_mode}" if result_bucket_mode else "bucket_mode=n/a",
             f"bucket_interpretation={bucket_assumption}" if bucket_assumption else "bucket_interpretation=n/a",
+            (
+                f"range_boundary_assumption={range_boundary_assumption}"
+                if range_boundary_assumption
+                else "range_boundary_assumption=n/a"
+            ),
             "actual_value is not used for prediction",
         ],
         warnings=warnings,
@@ -135,6 +159,9 @@ def estimate_temperature_threshold_probability(
         bucket_lower_bound=bucket_lower_bound,
         bucket_upper_bound=bucket_upper_bound,
         bucket_assumption=bucket_assumption,
+        range_lower_bound=range_lower_bound,
+        range_upper_bound=range_upper_bound,
+        range_boundary_assumption=range_boundary_assumption,
         weather_model=weather_model,
         model_parameters=model_parameters,
         distribution_assumption=distribution_assumption,

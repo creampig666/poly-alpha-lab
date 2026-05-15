@@ -23,7 +23,7 @@ from poly_alpha_lab.weather_probability_model import (
     convert_temperature_std,
     estimate_temperature_threshold_probability,
 )
-from poly_alpha_lab.resolution_analyzer import ResolutionAnalysis
+from poly_alpha_lab.resolution_analyzer import ResolutionAnalysis, extract_weather_station_details
 from poly_alpha_lab.weather_calibration import (
     WeatherCalibrationSummary,
     calibration_quality_for_n,
@@ -68,6 +68,10 @@ class WeatherAlphaSignal(BaseModel):
     bucket_lower_bound: float | None = None
     bucket_upper_bound: float | None = None
     bucket_assumption: str | None = None
+    range_lower_bound: float | None = None
+    range_upper_bound: float | None = None
+    range_boundary_assumption: str | None = None
+    range_numeric_boundary_confirmed: bool = False
     forecast_mean: float
     forecast_std: float
     model_p_yes: float = Field(ge=0, le=1)
@@ -135,6 +139,7 @@ class WeatherAlphaScanResult(BaseModel):
     weather_candidate_count: int
     threshold_candidate_count: int = 0
     exact_bucket_candidate_count: int = 0
+    range_bucket_candidate_count: int = 0
     signals: list[WeatherAlphaSignal]
     skipped: list[str] = Field(default_factory=list)
 
@@ -153,6 +158,7 @@ class WeatherSignalValidation(BaseModel):
     bucket_boundary_confirmed: bool = False
     bucket_structure_confirmed: bool = False
     bucket_numeric_boundary_confirmed: bool = False
+    range_numeric_boundary_confirmed: bool = False
     data_provenance_warnings: list[str] = Field(default_factory=list)
     forecast_timing_tolerance_applied: bool = False
 
@@ -190,6 +196,7 @@ def run_weather_alpha_scan(
     weather_candidate_count = 0
     threshold_candidate_count = 0
     exact_bucket_candidate_count = 0
+    range_bucket_candidate_count = 0
     signals: list[WeatherAlphaSignal] = []
     skipped: list[str] = []
     for candidate in data:
@@ -199,19 +206,25 @@ def run_weather_alpha_scan(
         if classification.market_type not in {
             MarketType.weather_temperature_threshold,
             MarketType.weather_temperature_exact_bucket,
+            MarketType.weather_temperature_range_bucket,
         }:
             continue
         weather_candidate_count += 1
         if classification.market_type == MarketType.weather_temperature_exact_bucket:
             exact_bucket_candidate_count += 1
+        elif classification.market_type == MarketType.weather_temperature_range_bucket:
+            range_bucket_candidate_count += 1
         else:
             threshold_candidate_count += 1
+        resolution = resolution_lookup(candidate) if resolution_lookup is not None else None
+        resolution_station_id = resolution.extracted_station_id if resolution is not None else None
         provider_as_of_time = parsed_as_of_time if as_of_time is not None else None
         forecast = provider.get_forecast(
             classification.location_name or "",
             classification.target_date or "",
             classification.metric or "",
             as_of_time=provider_as_of_time,
+            station_id=resolution_station_id,
         )
         if forecast is None:
             skipped.append(
@@ -219,7 +232,6 @@ def run_weather_alpha_scan(
                 f"{classification.location_name}:{classification.target_date}:{classification.metric}"
             )
             continue
-        resolution = resolution_lookup(candidate) if resolution_lookup is not None else None
         signals.append(
             build_weather_alpha_signal(
                 candidate,
@@ -253,6 +265,7 @@ def run_weather_alpha_scan(
         weather_candidate_count=weather_candidate_count,
         threshold_candidate_count=threshold_candidate_count,
         exact_bucket_candidate_count=exact_bucket_candidate_count,
+        range_bucket_candidate_count=range_bucket_candidate_count,
         signals=signals,
         skipped=skipped,
     )
@@ -286,6 +299,7 @@ def build_weather_alpha_signal(
     if classification.market_type not in {
         MarketType.weather_temperature_threshold,
         MarketType.weather_temperature_exact_bucket,
+        MarketType.weather_temperature_range_bucket,
     }:
         raise ValueError("classification must be a supported weather temperature market")
     if (
@@ -297,6 +311,10 @@ def build_weather_alpha_signal(
         or classification.comparator is None
     ):
         raise ValueError("classification is missing required weather threshold fields")
+    if classification.market_type == MarketType.weather_temperature_range_bucket and (
+        classification.range_lower is None or classification.range_upper is None
+    ):
+        raise ValueError("range bucket classification is missing range bounds")
 
     generated_at = _aware_datetime(generated_at or datetime.now(UTC))
     parsed_as_of_time = _parse_datetime(as_of_time) if as_of_time is not None else generated_at
@@ -329,6 +347,8 @@ def build_weather_alpha_signal(
         student_t_df=student_t_df,
         mixture_tail_weight=mixture_tail_weight,
         mixture_tail_scale=mixture_tail_scale,
+        range_lower=classification.range_lower,
+        range_upper=classification.range_upper,
     )
     yes_breakeven = float(candidate["yes_breakeven_probability"])
     no_upper_bound = float(candidate["no_required_yes_probability_upper_bound"])
@@ -392,6 +412,10 @@ def build_weather_alpha_signal(
         bucket_lower_bound=probability.bucket_lower_bound,
         bucket_upper_bound=probability.bucket_upper_bound,
         bucket_assumption=probability.bucket_assumption,
+        range_lower_bound=probability.range_lower_bound,
+        range_upper_bound=probability.range_upper_bound,
+        range_boundary_assumption=probability.range_boundary_assumption,
+        range_numeric_boundary_confirmed=validation.range_numeric_boundary_confirmed,
         forecast_mean=display_forecast_mean,
         forecast_std=display_forecast_std,
         model_p_yes=probability.model_p_yes,
@@ -484,8 +508,9 @@ def weather_alpha_report(result: WeatherAlphaScanResult) -> str:
         f"- Weather candidates identified: `{result.weather_candidate_count}`",
         f"- Threshold candidates identified: `{getattr(result, 'threshold_candidate_count', 0)}`",
         f"- Exact bucket candidates identified: `{getattr(result, 'exact_bucket_candidate_count', 0)}`",
+        f"- Range bucket candidates identified: `{getattr(result, 'range_bucket_candidate_count', 0)}`",
         f"- Weather alpha signals generated: `{len(result.signals)}`",
-        "- Scope: `temperature_threshold_and_exact_bucket_only`",
+        "- Scope: `temperature_threshold_exact_and_range_bucket_only`",
         "- Purpose: `paper_research_not_trade_signal`",
         "- Forecast actual_value is not used for model probability.",
         "",
@@ -509,6 +534,7 @@ def _signal_section(signal: WeatherAlphaSignal) -> list[str]:
         f"- category: `{signal.category or 'n/a'}`",
         f"- location / metric / date: `{signal.location_name}` / `{signal.metric}` / `{signal.target_date}`",
         f"- threshold: `{signal.threshold:g}{signal.unit}`",
+        f"- range_bucket: `{_fmt_range_interval(signal)}`",
         f"- signal_status: `{signal.signal_status}`",
         f"- validation_warnings: `{_fmt_list(signal.validation_warnings)}`",
         f"- run_mode: `{signal.run_mode}`",
@@ -614,6 +640,13 @@ def _journal_draft_payload(
         and signal.bucket_upper_bound is not None
         else f"; model_p_yes={signal.model_p_yes:.6g}"
     )
+    if signal.range_lower_bound is not None and signal.range_upper_bound is not None:
+        bucket_rationale = (
+            f"; model assumes temperature range bucket; "
+            f"range_interval=[{signal.range_lower_bound:g}, {signal.range_upper_bound:g}){signal.unit}; "
+            f"range_boundary_assumption={signal.range_boundary_assumption or '[lower, upper)'}; "
+            f"model_p_yes={signal.model_p_yes:.6g}"
+        )
     validation_rationale = ""
     if signal.signal_status != "VALID":
         validation_rationale = (
@@ -826,11 +859,21 @@ def _validate_signal(
     provenance_warnings = _data_provenance_warnings(forecast, resolution_source or source_text)
     if provenance_warnings:
         status = _status_at_least(status, "NEEDS_MANUAL_REVIEW")
-    resolution_station_id = _extract_station_id(source_text)
+    station_details = extract_weather_station_details(source_text)
+    resolution_station_id = (
+        resolution_analysis.extracted_station_id
+        if resolution_analysis and resolution_analysis.extracted_station_id
+        else station_details.station_id
+    )
     forecast_station_id = (forecast.station_id or "").strip().upper() or None
-    source_location_name = _extract_source_location_name(source_text)
+    source_location_name = (
+        resolution_analysis.extracted_station_name
+        if resolution_analysis and resolution_analysis.extracted_station_name
+        else station_details.station_name
+    )
     bucket_structure_confirmed = False
     bucket_numeric_boundary_confirmed = False
+    range_numeric_boundary_confirmed = False
     if classification.market_type == MarketType.weather_temperature_exact_bucket:
         bucket_structure_confirmed = _has_bucket_range_language(source_text)
         bucket_numeric_boundary_confirmed = _has_explicit_bucket_boundary(
@@ -843,6 +886,15 @@ def _validate_signal(
                 status = _status_at_least(status, "NEEDS_MANUAL_REVIEW")
         else:
             warnings.append("bucket_boundary_assumption_unconfirmed")
+            status = _status_at_least(status, "NEEDS_MANUAL_REVIEW")
+    if classification.market_type == MarketType.weather_temperature_range_bucket:
+        range_numeric_boundary_confirmed = _has_explicit_range_boundary(
+            source_text,
+            classification.range_lower,
+            classification.range_upper,
+        )
+        if not range_numeric_boundary_confirmed:
+            warnings.append("range_boundary_assumption_unconfirmed")
             status = _status_at_least(status, "NEEDS_MANUAL_REVIEW")
 
     if resolution_analysis is not None:
@@ -890,6 +942,7 @@ def _validate_signal(
         bucket_boundary_confirmed=bucket_numeric_boundary_confirmed,
         bucket_structure_confirmed=bucket_structure_confirmed,
         bucket_numeric_boundary_confirmed=bucket_numeric_boundary_confirmed,
+        range_numeric_boundary_confirmed=range_numeric_boundary_confirmed,
         data_provenance_warnings=_unique(provenance_warnings),
         forecast_timing_tolerance_applied=tolerance_applied,
     )
@@ -973,7 +1026,7 @@ def _status_at_least(current: SignalStatus, new_status: SignalStatus) -> SignalS
 
 def _source_mentions_weather_station(text: str) -> bool:
     lower = text.casefold()
-    return any(term in lower for term in ("wunderground", "station", "airport", "limc"))
+    return any(term in lower for term in ("wunderground", "station", "airport", "limc", "sbgr"))
 
 
 def _source_mentions_wunderground(text: str | None) -> bool:
@@ -1023,6 +1076,27 @@ def _has_explicit_bucket_boundary(text: str, threshold: float | None) -> bool:
         f"{lower_bound:g} <= ",
     ]
     return any(pattern in lower for pattern in patterns)
+
+
+def _has_explicit_range_boundary(
+    text: str,
+    range_lower: float | None,
+    range_upper: float | None,
+) -> bool:
+    if range_lower is None or range_upper is None:
+        return False
+    lower_text = text.casefold()
+    lower_bound = min(range_lower, range_upper)
+    upper_bound = max(range_lower, range_upper)
+    patterns = [
+        f"{lower_bound:g} to {upper_bound:g}",
+        f"{lower_bound:g}-{upper_bound:g}",
+        f"[{lower_bound:g}, {upper_bound:g})",
+        f"{lower_bound:g} <= ",
+        "including the lower bound",
+        "not including the upper bound",
+    ]
+    return any(pattern in lower_text for pattern in patterns)
 
 
 def _resolution_text_for_validation(resolution_analysis: ResolutionAnalysis | None) -> str:
@@ -1095,6 +1169,12 @@ def _fmt_bucket_interval(signal: WeatherAlphaSignal) -> str:
     if signal.bucket_lower_bound is None or signal.bucket_upper_bound is None:
         return "n/a"
     return f"[{signal.bucket_lower_bound:g}, {signal.bucket_upper_bound:g}){signal.unit}"
+
+
+def _fmt_range_interval(signal: WeatherAlphaSignal) -> str:
+    if signal.range_lower_bound is None or signal.range_upper_bound is None:
+        return "n/a"
+    return f"[{signal.range_lower_bound:g}, {signal.range_upper_bound:g}){signal.unit}"
 
 
 def _fmt_optional_float(value: float | None) -> str:

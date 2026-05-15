@@ -771,6 +771,7 @@ def _weather_candidate_ids(candidates: list[StrategyCandidate]) -> set[str]:
         if classification.market_type in {
             MarketType.weather_temperature_threshold,
             MarketType.weather_temperature_exact_bucket,
+            MarketType.weather_temperature_range_bucket,
         }:
             ids.add(candidate.market_id)
     return ids

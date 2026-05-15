@@ -90,6 +90,21 @@ def test_classifier_does_not_treat_equity_price_as_weather_exact_bucket() -> Non
     assert result.market_type != MarketType.weather_temperature_threshold
 
 
+def test_classifier_identifies_temperature_range_bucket() -> None:
+    result = classify_market_text(
+        "Will the highest temperature in Chicago be between 72-73\u00b0F on May 12?",
+        reference_date=date(2026, 5, 8),
+    )
+
+    assert result.market_type == MarketType.weather_temperature_range_bucket
+    assert result.location_name == "Chicago"
+    assert result.metric == "high_temperature"
+    assert result.comparator == "range_bucket"
+    assert result.range_lower == 72
+    assert result.range_upper == 73
+    assert result.unit == "F"
+
+
 def test_classifier_identifies_or_higher_temperature_threshold() -> None:
     result = classify_market_text(
         "Will the highest temperature in New York City be 74\u00b0F or higher on May 8?",

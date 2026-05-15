@@ -72,6 +72,7 @@ class WeatherDataProvider(ABC):
         metric: str,
         *,
         as_of_time: str | datetime | None = None,
+        station_id: str | None = None,
     ) -> WeatherForecast | None:
         """Return the forecast available for a location/date/metric."""
 
@@ -94,9 +95,16 @@ class CsvWeatherDataProvider(WeatherDataProvider):
         metric: str,
         *,
         as_of_time: str | datetime | None = None,
+        station_id: str | None = None,
     ) -> WeatherForecast | None:
-        key = _key(location, target_date, metric)
-        forecasts = self._forecasts.get(key, [])
+        if station_id:
+            station_forecasts = self._forecasts.get(_key(station_id, target_date, metric), [])
+            if station_forecasts:
+                forecasts = station_forecasts
+            else:
+                forecasts = self._forecasts.get(_key(location, target_date, metric), [])
+        else:
+            forecasts = self._forecasts.get(_key(location, target_date, metric), [])
         if not forecasts:
             return None
         if as_of_time is not None:
@@ -190,7 +198,12 @@ class StubWeatherDataProvider(WeatherDataProvider):
         metric: str,
         *,
         as_of_time: str | datetime | None = None,
+        station_id: str | None = None,
     ) -> WeatherForecast | None:
+        if station_id:
+            station_forecast = self._forecasts.get(_key(station_id, target_date, metric))
+            if station_forecast is not None:
+                return station_forecast
         return self._forecasts.get(_key(location, target_date, metric))
 
     def get_actual(self, location: str, target_date: str, metric: str) -> float | None:
@@ -242,8 +255,11 @@ class LocationMapping(BaseModel):
     latitude: float
     longitude: float
     station_id: str | None = None
+    station_name: str | None = None
     source_location_name: str | None = None
+    country: str | None = None
     timezone: str | None = None
+    provider: str | None = None
     notes: str | None = None
     default_forecast_std: float | None = None
     std_source: str | None = None
@@ -254,15 +270,25 @@ class LocationResolver:
 
     def __init__(self, locations_file: str | Path) -> None:
         self.locations_file = Path(locations_file)
-        self._locations = self._load_locations(self.locations_file)
+        self._locations, self._stations = self._load_locations(self.locations_file)
 
-    def resolve(self, location_name: str) -> LocationMapping | None:
+    def resolve(self, location_name: str, station_id: str | None = None) -> LocationMapping | None:
+        if station_id:
+            station_mapping = self.resolve_station(station_id)
+            if station_mapping is not None:
+                return station_mapping
         return self._locations.get(_normalize_location(location_name))
 
-    def _load_locations(self, path: Path) -> dict[str, LocationMapping]:
+    def resolve_station(self, station_id: str | None) -> LocationMapping | None:
+        if not station_id:
+            return None
+        return self._stations.get(station_id.strip().upper())
+
+    def _load_locations(self, path: Path) -> tuple[dict[str, LocationMapping], dict[str, LocationMapping]]:
         if not path.exists():
-            return {}
+            return {}, {}
         locations: dict[str, LocationMapping] = {}
+        stations: dict[str, LocationMapping] = {}
         with path.open(newline="", encoding="utf-8") as file:
             reader = csv.DictReader(file)
             for row in reader:
@@ -271,14 +297,19 @@ class LocationResolver:
                     latitude=float(_required(row, "latitude")),
                     longitude=float(_required(row, "longitude")),
                     station_id=_optional_string(row.get("station_id")),
+                    station_name=_optional_string(row.get("station_name")),
                     source_location_name=_optional_string(row.get("source_location_name")),
+                    country=_optional_string(row.get("country")),
                     timezone=_optional_string(row.get("timezone")),
+                    provider=_optional_string(row.get("provider")),
                     notes=_optional_string(row.get("notes")),
                     default_forecast_std=_optional_float(row.get("default_forecast_std")),
                     std_source=_optional_string(row.get("std_source")),
                 )
                 locations[_normalize_location(mapping.location_name)] = mapping
-        return locations
+                if mapping.station_id:
+                    stations[mapping.station_id.strip().upper()] = mapping
+        return locations, stations
 
 
 class OpenMeteoForecastProvider(WeatherDataProvider):
@@ -315,17 +346,23 @@ class OpenMeteoForecastProvider(WeatherDataProvider):
         metric: str,
         *,
         as_of_time: str | datetime | None = None,
+        station_id: str | None = None,
     ) -> WeatherForecast | None:
-        mapping = self.location_resolver.resolve(location)
+        requested_station_id = (station_id or "").strip().upper() or None
+        station_mapping = self.location_resolver.resolve_station(requested_station_id)
+        mapping = station_mapping or self.location_resolver.resolve(location)
         if mapping is None:
             return None
+        provider_warnings: list[str] = []
+        if requested_station_id and station_mapping is None:
+            provider_warnings.append("station_forecast_fallback_to_city_centroid")
         issued_at = _aware_datetime(self.now())
         target = _parse_date(target_date)
         if target < issued_at.date():
             raise ValueError("OpenMeteo current forecast cannot be used for past target_date")
         parsed_as_of_time = _parse_datetime(as_of_time) if as_of_time is not None else issued_at
         cache_key = open_meteo_cache_key(
-            location=location,
+            location=requested_station_id or location,
             target_date=target.isoformat(),
             metric=metric,
             as_of_time=parsed_as_of_time,
@@ -367,6 +404,7 @@ class OpenMeteoForecastProvider(WeatherDataProvider):
             notes=mapping.notes,
             cache_key=cache_key,
             raw_data_reference=str(cache_path),
+            provider_warnings=provider_warnings,
         )
         cache_payload = {"forecast": forecast.model_dump(mode="json"), "raw": raw}
         cache_path.write_text(json.dumps(cache_payload, indent=2, ensure_ascii=False), encoding="utf-8")

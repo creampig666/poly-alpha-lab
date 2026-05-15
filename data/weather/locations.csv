@@ -1,4 +1,21 @@
-location_name,latitude,longitude,station_id,source_location_name,timezone,notes,default_forecast_std,std_source
-Milan,45.6306,8.7281,LIMC,Malpensa Intl Airport Station,Europe/Rome,Wunderground LIMC station mapping for Milan weather markets,0.8,manual_research_required
-Sao Paulo,-23.5505,-46.6333,,Sao Paulo city centroid,America/Sao_Paulo,Sample city-level mapping for Sao Paulo weather markets,1.2,manual_research_required
-Paris,48.8566,2.3522,,Paris city centroid,Europe/Paris,Sample city-level mapping for Paris weather markets,2.0,manual_research_required
+location_name,latitude,longitude,station_id,station_name,source_location_name,country,timezone,provider,notes,default_forecast_std,std_source
+Milan,45.6306,8.7281,LIMC,,Malpensa Intl Airport Station,,Europe/Rome,,Wunderground LIMC station mapping for Milan weather markets,0.8,manual_research_required
+Sao Paulo,-23.5505,-46.6333,,,Sao Paulo city centroid,,America/Sao_Paulo,,Sample city-level mapping for Sao Paulo weather markets,1.2,manual_research_required
+Paris,48.8566,2.3522,,,Paris city centroid,,Europe/Paris,,Sample city-level mapping for Paris weather markets,2.0,manual_research_required
+Buenos Aires,-34.613150,-58.377230,,,Buenos Aires city centroid,Argentina,America/Argentina/Buenos_Aires,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Karachi,24.860800,67.010400,,,Karachi city centroid,Pakistan,Asia/Karachi,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Wellington,-41.286640,174.775570,,,Wellington city centroid,New Zealand,Pacific/Auckland,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Chengdu,30.666670,104.066670,,,Chengdu city centroid,China,Asia/Shanghai,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Miami,25.774270,-80.193660,,,Miami city centroid,United States,America/New_York,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Houston,29.763280,-95.363270,,,Houston city centroid,United States,America/Chicago,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Busan,35.101680,129.030040,,,Busan city centroid,South Korea,Asia/Seoul,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Warsaw,52.229770,21.011780,,,Warsaw city centroid,Poland,Europe/Warsaw,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Ankara,39.919870,32.854270,,,Ankara city centroid,Republic of Türkiye,Europe/Istanbul,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Toronto,43.706430,-79.398640,,,Toronto city centroid,Canada,America/Toronto,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Helsinki,60.169520,24.935450,,,Helsinki city centroid,Finland,Europe/Helsinki,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Chicago,41.850030,-87.650050,,,Chicago city centroid,United States,America/Chicago,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Munich,48.137430,11.575490,,,Munich city centroid,Germany,Europe/Berlin,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Los Angeles,34.052230,-118.243680,,,Los Angeles city centroid,United States,America/Los_Angeles,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Tel Aviv,32.080880,34.780570,,,Tel Aviv city centroid,Israel,Asia/Jerusalem,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+London,51.508530,-0.125740,,,London city centroid,United Kingdom,Europe/London,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,
+Panama City,8.993600,-79.519730,,,Panama City city centroid,Panama,America/Panama,open-meteo-geocoding,geocoding suggestion; manually review before strict use,,

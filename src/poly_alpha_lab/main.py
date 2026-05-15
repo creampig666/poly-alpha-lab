@@ -18,8 +18,12 @@ from poly_alpha_lab.daily_capture import (
     run_daily_weather_capture,
 )
 from poly_alpha_lab.daily_diagnostics import (
+    diagnose_missing_forecasts,
     diagnose_weather_daily_captures,
+    missing_forecasts_report_zh,
     weather_diagnostics_report_zh,
+    write_missing_forecasts_csv,
+    write_missing_forecasts_markdown,
     write_weather_diagnostics_json,
     write_weather_diagnostics_markdown,
 )
@@ -83,6 +87,12 @@ from poly_alpha_lab.weather_model_diagnostics import (
     diagnose_weather_models,
     weather_model_diagnostics_report,
     write_weather_model_diagnostics_csv,
+)
+from poly_alpha_lab.weather_locations import (
+    enrich_pending_locations,
+    enrichment_summary_to_markdown,
+    promote_location_suggestions,
+    promotion_summary_to_markdown,
 )
 
 
@@ -319,6 +329,52 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose_daily_weather.add_argument("--output-md", default="data/daily/weather_diagnostics_last7d_zh.md")
     diagnose_daily_weather.add_argument("--output-json", default="data/daily/weather_diagnostics_last7d.json")
     diagnose_daily_weather.add_argument("--language", choices=["zh"], default="zh")
+
+    diagnose_missing_forecasts_parser = daily_capture_subparsers.add_parser(
+        "diagnose-missing-forecasts",
+        help="Diagnose weather candidates that failed forecast lookup.",
+    )
+    diagnose_missing_forecasts_parser.add_argument("--days", type=int, default=7)
+    diagnose_missing_forecasts_parser.add_argument("--daily-dir", default="data/daily")
+    diagnose_missing_forecasts_parser.add_argument("--output-md", default="data/daily/missing_forecasts_last7d_zh.md")
+    diagnose_missing_forecasts_parser.add_argument("--output-csv", default="data/daily/missing_forecasts_last7d.csv")
+    diagnose_missing_forecasts_parser.add_argument("--language", choices=["zh"], default="zh")
+    diagnose_missing_forecasts_parser.add_argument("--locations-file", default="data/weather/locations.csv")
+    diagnose_missing_forecasts_parser.add_argument("--pending-output", default="data/weather/locations_pending.csv")
+
+    weather_locations = subparsers.add_parser(
+        "weather-locations",
+        help="Enrich and promote weather location mapping suggestions.",
+    )
+    weather_locations_subparsers = weather_locations.add_subparsers(
+        dest="weather_locations_command",
+        required=True,
+    )
+    enrich_pending = weather_locations_subparsers.add_parser(
+        "enrich-pending",
+        help="Geocode locations_pending.csv into reviewable suggestions.",
+    )
+    enrich_pending.add_argument("--pending", default="data/weather/locations_pending.csv")
+    enrich_pending.add_argument("--existing", default="data/weather/locations.csv")
+    enrich_pending.add_argument("--output", default="data/weather/locations_suggestions.csv")
+    enrich_pending.add_argument("--provider", choices=["open-meteo-geocoding"], default="open-meteo-geocoding")
+    enrich_pending.add_argument("--proxy")
+    enrich_trust_group = enrich_pending.add_mutually_exclusive_group()
+    enrich_trust_group.add_argument("--trust-env", dest="trust_env", action="store_true", default=True)
+    enrich_trust_group.add_argument("--no-trust-env", dest="trust_env", action="store_false")
+    enrich_pending.add_argument("--min-confidence", type=float, default=0.70)
+    enrich_pending.add_argument("--limit", type=int)
+
+    promote_suggestions = weather_locations_subparsers.add_parser(
+        "promote-suggestions",
+        help="Write a reviewed locations_updated.csv from suggestions.",
+    )
+    promote_suggestions.add_argument("--suggestions", default="data/weather/locations_suggestions.csv")
+    promote_suggestions.add_argument("--locations", default="data/weather/locations.csv")
+    promote_suggestions.add_argument("--output", default="data/weather/locations_updated.csv")
+    promote_suggestions.add_argument("--min-confidence", type=float, default=0.85)
+    promote_suggestions.add_argument("--only-status", default="suggested")
+    promote_suggestions.add_argument("--dry-run", action="store_true")
 
     weather_calibration = subparsers.add_parser(
         "weather-calibration",
@@ -867,6 +923,52 @@ def run(argv: list[str] | None = None) -> int:
                 print("Top bottlenecks:")
                 for item in bottlenecks[:3]:
                     print(f"- {item['reason']}: {item['count']}")
+            return 0
+        if args.daily_capture_command == "diagnose-missing-forecasts":
+            result = diagnose_missing_forecasts(
+                args.daily_dir,
+                days=args.days,
+                locations_file=args.locations_file,
+                pending_output=args.pending_output,
+                language=args.language,
+            )
+            write_missing_forecasts_csv(result, args.output_csv)
+            write_missing_forecasts_markdown(result, args.output_md, language=args.language)
+            print(missing_forecasts_report_zh(result))
+            print(f"Wrote missing forecasts markdown to `{args.output_md}`")
+            print(f"Wrote missing forecasts CSV to `{args.output_csv}`")
+            print(f"Updated locations pending CSV at `{result.get('locations_pending_path')}`")
+            top = result.get("top_missing_locations_or_stations", [])
+            if top:
+                print("Top missing locations/stations:")
+                for item in top[:10]:
+                    print(f"- {item['location_or_station']}: {item['count']}")
+            return 0
+
+    if args.command == "weather-locations":
+        if args.weather_locations_command == "enrich-pending":
+            summary = enrich_pending_locations(
+                pending_path=args.pending,
+                existing_path=args.existing,
+                output_path=args.output,
+                provider=args.provider,
+                proxy=args.proxy,
+                trust_env=args.trust_env,
+                min_confidence=args.min_confidence,
+                limit=args.limit,
+            )
+            print(enrichment_summary_to_markdown(summary))
+            return 0
+        if args.weather_locations_command == "promote-suggestions":
+            summary = promote_location_suggestions(
+                suggestions_path=args.suggestions,
+                locations_path=args.locations,
+                output_path=args.output,
+                min_confidence=args.min_confidence,
+                only_status=args.only_status,
+                dry_run=args.dry_run,
+            )
+            print(promotion_summary_to_markdown(summary))
             return 0
 
     if args.command == "journal":

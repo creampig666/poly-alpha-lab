@@ -2,7 +2,7 @@ import pytest
 
 import poly_alpha_lab.main as cli
 from poly_alpha_lab.models import Market
-from poly_alpha_lab.resolution_analyzer import analyze_resolution
+from poly_alpha_lab.resolution_analyzer import analyze_resolution, extract_weather_station_details
 
 
 LOW_RISK_RULES = (
@@ -158,6 +158,23 @@ def test_yes_and_no_criteria_extraction() -> None:
     assert "resolve to Yes if" in analysis.what_counts_as_yes
     assert analysis.what_counts_as_no is not None
     assert "Otherwise" in analysis.what_counts_as_no
+
+
+def test_extracts_wunderground_station_code_from_url() -> None:
+    station = extract_weather_station_details(
+        "Source: https://www.wunderground.com/history/daily/br/guarulhos/SBGR/date/2026-5-12"
+    )
+
+    assert station.station_id == "SBGR"
+
+
+def test_extracts_malpensa_station_from_text() -> None:
+    station = extract_weather_station_details(
+        "The market uses the Milan Malpensa Intl Airport Station (LIMC) on Wunderground."
+    )
+
+    assert station.station_id == "LIMC"
+    assert "Malpensa" in (station.station_name or "")
 
 
 def test_analyze_resolution_cli_runs(monkeypatch, capsys) -> None:

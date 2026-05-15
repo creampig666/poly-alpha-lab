@@ -128,6 +128,11 @@ NO_PATTERNS = [
 NUMERIC_VALUE_RE = re.compile(r"([$]\d|\b\d+(?:\.\d+)?\s*%)", re.I)
 
 
+class StationExtraction(BaseModel):
+    station_id: str | None = None
+    station_name: str | None = None
+
+
 class ResolutionAnalysis(BaseModel):
     """Rule-based audit of market resolution criteria."""
 
@@ -150,6 +155,8 @@ class ResolutionAnalysis(BaseModel):
     missing_fields: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     research_notes: list[str] = Field(default_factory=list)
+    extracted_station_id: str | None = None
+    extracted_station_name: str | None = None
 
 
 def analyze_resolution(market: Market) -> ResolutionAnalysis:
@@ -173,6 +180,7 @@ def analyze_resolution(market: Market) -> ResolutionAnalysis:
     resolution_source = _first_sentence_with(sentences, SOURCE_KEYWORDS)
     deadline = _deadline_sentence(sentences)
     time_zone = _time_zone(text)
+    station = extract_weather_station_details(text)
 
     if resolution_source is None:
         missing.append("resolution_source")
@@ -234,6 +242,8 @@ def analyze_resolution(market: Market) -> ResolutionAnalysis:
         missing_fields=_unique(missing),
         warnings=_unique(warnings),
         research_notes=_unique(notes),
+        extracted_station_id=station.station_id,
+        extracted_station_name=station.station_name,
     )
 
 
@@ -279,6 +289,52 @@ def _string_value(value: Any) -> str | None:
         for key in ("text", "description", "rules"):
             if key in value:
                 return _string_value(value[key])
+    return None
+
+
+def extract_weather_station_details(text: str | None) -> StationExtraction:
+    """Extract weather station identifiers/names from rule text or source URLs."""
+
+    if not text:
+        return StationExtraction()
+    station_id = _station_id_from_text(text)
+    station_name = _station_name_from_text(text)
+    lower = text.casefold()
+    if station_id is None:
+        if "malpensa" in lower:
+            station_id = "LIMC"
+        elif "guarulhos" in lower:
+            station_id = "SBGR"
+    if station_name is None:
+        if "malpensa" in lower:
+            station_name = "Milan Malpensa Intl Airport Station"
+        elif "guarulhos" in lower:
+            station_name = "Sao Paulo-Guarulhos International Airport Station"
+    return StationExtraction(station_id=station_id, station_name=station_name)
+
+
+def _station_id_from_text(text: str) -> str | None:
+    for path_match in re.finditer(r"/([A-Za-z]{4})(?:/|[?#\s]|$)", text):
+        value = path_match.group(1).upper()
+        if value not in {"DATE", "DAILY"}:
+            return value
+    for match in re.finditer(r"\b[A-Z]{4}\b", text):
+        value = match.group(0).upper()
+        if value not in {"THIS", "WILL", "YESN", "DATE"}:
+            return value
+    return None
+
+
+def _station_name_from_text(text: str) -> str | None:
+    patterns = [
+        r"([A-Z][A-Za-z]+(?:[-\s][A-Z][A-Za-z]+){0,5}\s+(?:Intl|International)\s+Airport\s+Station)",
+        r"([A-Z][A-Za-z]+(?:[-\s][A-Z][A-Za-z]+){0,5}\s+Airport\s+Station)",
+        r"([A-Z][A-Za-z]+(?:[-\s][A-Z][A-Za-z]+){0,5}\s+Station)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return " ".join(match.group(1).split())
     return None
 
 

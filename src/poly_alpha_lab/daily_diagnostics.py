@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import json
 import re
+import csv
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from poly_alpha_lab.market_type_classifier import MarketType, classify_strategy_candidate
+from poly_alpha_lab.resolution_analyzer import extract_weather_station_details
+from poly_alpha_lab.weather_data import LocationResolver
 
 SUPPORTED_WEATHER_TYPES = {
     MarketType.weather_temperature_threshold,
     MarketType.weather_temperature_exact_bucket,
+    MarketType.weather_temperature_range_bucket,
 }
 
 EDGE_BUCKETS = (
@@ -99,6 +103,7 @@ def diagnose_weather_daily_captures(
     resolution_station_missing = 0
     station_mismatch = 0
     missing_forecast_count = 0
+    missing_forecast_location_counts: Counter[str] = Counter()
     calibration_applied_count = 0
     timing_issue_counts: Counter[str] = Counter()
 
@@ -176,6 +181,7 @@ def diagnose_weather_daily_captures(
             inferred_reasons.update(inferred)
             if "missing_forecast" in reasons:
                 missing_forecast_count += 1
+                missing_forecast_location_counts[classification.location_name or "unknown"] += 1
 
     funnel = _funnel_rows(totals)
     top_bottlenecks = _top_bottlenecks(
@@ -218,6 +224,9 @@ def diagnose_weather_daily_captures(
             "calibration_quality_counts": dict(calibration_quality_counts.most_common()),
             "missing_forecast_count": missing_forecast_count,
             "timing_issue_counts": dict(timing_issue_counts.most_common()),
+            "top_missing_locations_or_stations": dict(missing_forecast_location_counts.most_common(10)),
+            "locations_pending_path": "data/weather/locations_pending.csv",
+            "locations_pending_count": _count_csv_rows(Path("data/weather/locations_pending.csv")),
         },
         "top_bottlenecks": top_bottlenecks,
         "recommendations": _recommendations(totals, failure_reasons, station_mismatch),
@@ -242,6 +251,274 @@ def write_weather_diagnostics_markdown(
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(weather_diagnostics_report_zh(result), encoding="utf-8")
+
+
+def diagnose_missing_forecasts(
+    daily_dir: str | Path = "data/daily",
+    *,
+    days: int = 7,
+    locations_file: str | Path = "data/weather/locations.csv",
+    pending_output: str | Path = "data/weather/locations_pending.csv",
+    language: str = "zh",
+) -> dict[str, Any]:
+    """Build a candidate-level report for weather markets that lacked forecasts."""
+
+    del language
+    root = Path(daily_dir)
+    selected_dirs = _recent_day_dirs(root, days)
+    resolver = LocationResolver(locations_file)
+    records: list[dict[str, Any]] = []
+    reason_counts: Counter[str] = Counter()
+    location_station_counts: Counter[str] = Counter()
+    examples: dict[str, str] = {}
+
+    for summary_path in _summary_files(selected_dirs):
+        summary = _load_json_object(summary_path)
+        if summary is None:
+            continue
+        run_dir = summary_path.parent
+        captured_at = str(summary.get("captured_at") or "")
+        strategy_path = _resolve_artifact_path(summary.get("strategy_candidates_path"), run_dir)
+        alpha_path = _resolve_artifact_path(summary.get("weather_alpha_path"), run_dir)
+        strategy_candidates = _load_json_list(strategy_path) if strategy_path else []
+        signals = _load_json_list(alpha_path) if alpha_path else []
+        signal_ids = {str(signal.get("market_id")) for signal in signals}
+        skipped_keys = _missing_forecast_lookup_keys(signals, summary)
+
+        for candidate in strategy_candidates:
+            if not isinstance(candidate, dict):
+                continue
+            classification = classify_strategy_candidate(candidate)
+            if classification.market_type not in SUPPORTED_WEATHER_TYPES and not _weather_looking_candidate(candidate):
+                continue
+            parsed_location = classification.location_name or _rough_location_from_question(
+                str(candidate.get("question") or "")
+            )
+            market_id = str(candidate.get("market_id") or candidate.get("id") or "")
+            if market_id in signal_ids:
+                continue
+            if classification.market_type not in SUPPORTED_WEATHER_TYPES:
+                reason = (
+                    "location_not_in_locations_csv"
+                    if parsed_location and resolver.resolve(parsed_location) is None
+                    else ("parse_error" if classification.warnings else "metric_not_supported")
+                )
+            else:
+                reason = _missing_forecast_reason(
+                    candidate=candidate,
+                    classification=classification,
+                    resolver=resolver,
+                    captured_at=captured_at,
+                )
+            station = _station_details_for_candidate(candidate)
+            lookup_station = station.station_id
+            lookup_key = (
+                f"{lookup_station or parsed_location or 'unknown'}:"
+                f"{classification.target_date or 'unknown'}:{classification.metric or 'unknown'}"
+            )
+            if skipped_keys and lookup_key not in skipped_keys and classification.market_type in SUPPORTED_WEATHER_TYPES:
+                # Existing alpha skipped strings are not guaranteed to include every field, so this remains diagnostic only.
+                pass
+            match = resolver.resolve(
+                parsed_location or "",
+                station_id=lookup_station,
+            )
+            record = {
+                "date": run_dir.name,
+                "captured_at": captured_at,
+                "market_id": market_id,
+                "slug": candidate.get("slug"),
+                "question": candidate.get("question"),
+                "category": candidate.get("category"),
+                "parsed_market_type": classification.market_type.value,
+                "parsed_location_name": parsed_location,
+                "metric": classification.metric,
+                "target_date": classification.target_date,
+                "threshold": classification.threshold_value,
+                "range_lower": classification.range_lower,
+                "range_upper": classification.range_upper,
+                "unit": classification.unit,
+                "resolution_source": _candidate_resolution_source(candidate),
+                "extracted_station_id": lookup_station,
+                "extracted_station_name": station.station_name,
+                "forecast_lookup_key": lookup_key,
+                "locations_csv_match": "yes" if match else "no",
+                "reason": reason,
+            }
+            records.append(record)
+            reason_counts[reason] += 1
+            group_key = lookup_station or parsed_location or "unknown"
+            location_station_counts[group_key] += 1
+            examples.setdefault(group_key, str(candidate.get("question") or "n/a"))
+
+    pending_rows = _write_locations_pending(records, pending_output)
+    suggestions_summary = _locations_suggestions_summary(Path("data/weather/locations_suggestions.csv"))
+    return {
+        "daily_dir": str(root),
+        "days": days,
+        "selected_dates": [path.name for path in selected_dirs],
+        "records": records,
+        "reason_counts": dict(reason_counts.most_common()),
+        "location_station_counts": dict(location_station_counts.most_common()),
+        "examples": examples,
+        "locations_file": str(locations_file),
+        "locations_pending_path": str(pending_output),
+        "locations_pending_new_or_updated": pending_rows,
+        "locations_suggestions": suggestions_summary,
+        "top_missing_locations_or_stations": [
+            {
+                "location_or_station": key,
+                "count": count,
+                "example_question": examples.get(key, "n/a"),
+                "suggested_action": _missing_forecast_suggested_action(key, records),
+            }
+            for key, count in location_station_counts.most_common(10)
+        ],
+    }
+
+
+def write_missing_forecasts_csv(result: dict[str, Any], output_path: str | Path) -> None:
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = [
+        "date",
+        "captured_at",
+        "market_id",
+        "slug",
+        "question",
+        "category",
+        "parsed_market_type",
+        "parsed_location_name",
+        "metric",
+        "target_date",
+        "threshold",
+        "range_lower",
+        "range_upper",
+        "unit",
+        "resolution_source",
+        "extracted_station_id",
+        "extracted_station_name",
+        "forecast_lookup_key",
+        "locations_csv_match",
+        "reason",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fields)
+        writer.writeheader()
+        for record in result.get("records", []):
+            writer.writerow({field: record.get(field) for field in fields})
+
+
+def write_missing_forecasts_markdown(
+    result: dict[str, Any],
+    output_path: str | Path,
+    *,
+    language: str = "zh",
+) -> None:
+    if language != "zh":
+        raise ValueError("Only zh missing forecast report is supported in v1.3.5")
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(missing_forecasts_report_zh(result), encoding="utf-8")
+
+
+def missing_forecasts_report_zh(result: dict[str, Any]) -> str:
+    lines = [
+        "# 天气 Forecast 缺失明细诊断",
+        "",
+        "本报告只诊断 forecast/location/station 覆盖率，不改变交易逻辑、edge threshold 或 strict gate。",
+        "",
+        "## 1. 总览",
+        "",
+        f"- 最近天数：`{result.get('days')}`",
+        f"- missing forecast 明细数：`{len(result.get('records', []))}`",
+        f"- locations_pending.csv：`{result.get('locations_pending_path')}`",
+        f"- 待人工补坐标条目数：`{result.get('locations_pending_new_or_updated')}`",
+        f"- locations_suggestions.csv：`{result.get('locations_suggestions', {}).get('path')}`",
+        f"- 可 promote 的 high-confidence 建议数：`{result.get('locations_suggestions', {}).get('high_confidence_promotable', 0)}`",
+        "",
+        "## 2. 按原因统计",
+        "",
+        "| reason | 次数 | 中文解释 |",
+        "|---|---:|---|",
+    ]
+    reason_counts = result.get("reason_counts", {})
+    if reason_counts:
+        for reason, count in reason_counts.items():
+            lines.append(f"| `{reason}` | {count} | {_missing_reason_zh(reason)} |")
+    else:
+        lines.append("| 无 | 0 | 没有发现 missing_forecast 候选。 |")
+
+    lines.extend(
+        [
+            "",
+            "## 3. Top missing locations/stations",
+            "",
+            "| location/station | missing 次数 | 示例市场 | 建议动作 |",
+            "|---|---:|---|---|",
+        ]
+    )
+    top = result.get("top_missing_locations_or_stations", [])
+    if top:
+        for item in top:
+            lines.append(
+                "| {key} | {count} | {example} | {action} |".format(
+                    key=item.get("location_or_station"),
+                    count=item.get("count"),
+                    example=str(item.get("example_question") or "").replace("|", "/"),
+                    action=item.get("suggested_action"),
+                )
+            )
+    else:
+        lines.append("| 无 | 0 | 无 | 无需动作 |")
+
+    lines.extend(
+        [
+            "",
+            "## 4. 明细样例",
+            "",
+            "| date | market_id | location | station_id | metric | target_date | type | reason | question |",
+            "|---|---|---|---|---|---|---|---|---|",
+        ]
+    )
+    for record in result.get("records", [])[:30]:
+        lines.append(
+            "| {date} | {market_id} | {location} | {station} | {metric} | {target_date} | {market_type} | {reason} | {question} |".format(
+                date=record.get("date") or "n/a",
+                market_id=record.get("market_id") or "n/a",
+                location=record.get("parsed_location_name") or "n/a",
+                station=record.get("extracted_station_id") or "n/a",
+                metric=record.get("metric") or "n/a",
+                target_date=record.get("target_date") or "n/a",
+                market_type=record.get("parsed_market_type") or "n/a",
+                reason=record.get("reason") or "n/a",
+                question=str(record.get("question") or "").replace("|", "/"),
+            )
+        )
+    if not result.get("records"):
+        lines.append("| 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 | 无 |")
+
+    lines.extend(
+        [
+            "",
+            "## 5. 下一步建议",
+            "",
+        ]
+    )
+    reason_counts = Counter(result.get("reason_counts", {}))
+    if reason_counts.get("station_not_in_locations_csv") or reason_counts.get("location_not_in_locations_csv"):
+        lines.append("- 先人工补齐 `data/weather/locations_pending.csv` 中高频 station/location 的经纬度，再复制到正式 `locations.csv`。")
+    suggestions = result.get("locations_suggestions", {})
+    if suggestions.get("exists") and suggestions.get("high_confidence_promotable", 0):
+        lines.append("- 已发现 high-confidence suggestions，可运行 `weather-locations promote-suggestions` 生成 `locations_updated.csv`；审查后再替换正式 `locations.csv`。")
+    if reason_counts.get("parse_error") or reason_counts.get("metric_not_supported"):
+        lines.append("- 对 unsupported wording 做样例归档，再决定是否继续扩展 classifier。")
+    if reason_counts.get("target_date_out_of_provider_range"):
+        lines.append("- 检查 Open-Meteo current forecast 的可用日期窗口，过远或已过日期不应期待 current provider 返回 forecast。")
+    if not reason_counts:
+        lines.append("- 当前 missing forecast 不是主要瓶颈，继续观察 edge 和 strict gate skip reasons。")
+    lines.append("- 不要因为 coverage 诊断结果而放宽 strict gate 或降低 edge threshold。")
+    return "\n".join(lines) + "\n"
 
 
 def weather_diagnostics_report_zh(result: dict[str, Any]) -> str:
@@ -381,6 +658,8 @@ def weather_diagnostics_report_zh(result: dict[str, Any]) -> str:
             "",
             f"- calibration_applied 数量：`{forecast.get('calibration_applied_count', 0)}`",
             f"- missing forecast 数量：`{forecast.get('missing_forecast_count', 0)}`",
+            f"- locations_pending.csv 路径：`{forecast.get('locations_pending_path', 'data/weather/locations_pending.csv')}`",
+            f"- 待补 station/location 条目数：`{forecast.get('locations_pending_count', 0)}`",
             "",
             "### forecast_source 分布",
             "",
@@ -437,6 +716,173 @@ def _summary_files(day_dirs: list[Path]) -> list[Path]:
     return sorted(files)
 
 
+def _missing_forecast_lookup_keys(
+    signals: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> set[str]:
+    keys: set[str] = set()
+    for item in summary.get("skipped") or []:
+        text = str(item)
+        if "MISSING_FORECAST_DATA" in text:
+            parts = text.split(":", 2)
+            if len(parts) == 3:
+                keys.add(parts[2])
+    for signal in signals:
+        if signal.get("signal_status") == "MISSING_FORECAST_DATA":
+            key = (
+                f"{signal.get('location_name') or 'unknown'}:"
+                f"{signal.get('target_date') or 'unknown'}:{signal.get('metric') or 'unknown'}"
+            )
+            keys.add(key)
+    return keys
+
+
+def _station_details_for_candidate(candidate: dict[str, Any]):
+    text = " ".join(
+        str(candidate.get(key) or "")
+        for key in [
+            "resolution_source",
+            "resolution_text_excerpt",
+            "question",
+            "slug",
+        ]
+    )
+    return extract_weather_station_details(text)
+
+
+def _candidate_resolution_source(candidate: dict[str, Any]) -> str | None:
+    value = candidate.get("resolution_source") or candidate.get("resolution_text_excerpt")
+    return str(value) if value else None
+
+
+def _rough_location_from_question(question: str) -> str | None:
+    for pattern in [r"\bin\s+(.+?)\s+be\b", r"\bin\s+(.+?)\s+(?:on|by|before|after)\b"]:
+        match = re.search(pattern, question, flags=re.I)
+        if match:
+            return " ".join(match.group(1).strip(" ?.,;:\"'").split())
+    return None
+
+
+def _missing_forecast_reason(
+    *,
+    candidate: dict[str, Any],
+    classification: Any,
+    resolver: LocationResolver,
+    captured_at: str,
+) -> str:
+    if classification.metric not in {"high_temperature", "low_temperature", "average_temperature"}:
+        return "metric_not_supported"
+    if not classification.target_date or not classification.location_name:
+        return "parse_error"
+    station = _station_details_for_candidate(candidate)
+    if station.station_id and resolver.resolve_station(station.station_id) is None:
+        return "station_not_in_locations_csv"
+    if resolver.resolve(classification.location_name) is None:
+        return "location_not_in_locations_csv"
+    captured_date = _date_from_timestamp(captured_at)
+    if captured_date is not None and classification.target_date < captured_date:
+        return "target_date_out_of_provider_range"
+    return "unknown"
+
+
+def _date_from_timestamp(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return value[:10] if re.fullmatch(r"\d{4}-\d{2}-\d{2}.*", value) else None
+
+
+def _write_locations_pending(records: list[dict[str, Any]], output_path: str | Path) -> int:
+    path = Path(output_path)
+    fields = [
+        "source",
+        "detected_location_name",
+        "detected_station_id",
+        "detected_station_name",
+        "country_hint",
+        "example_market_id",
+        "example_slug",
+        "example_question",
+        "resolution_source",
+        "suggested_latitude",
+        "suggested_longitude",
+        "suggested_action",
+        "status",
+    ]
+    pending: dict[tuple[str, str], dict[str, Any]] = {}
+    if path.exists():
+        with path.open(newline="", encoding="utf-8") as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                key = (
+                    str(row.get("detected_location_name") or ""),
+                    str(row.get("detected_station_id") or ""),
+                )
+                pending[key] = {field: row.get(field, "") for field in fields}
+    added_or_updated = 0
+    for record in records:
+        if record.get("reason") not in {"location_not_in_locations_csv", "station_not_in_locations_csv"}:
+            continue
+        location = str(record.get("parsed_location_name") or "")
+        station_id = str(record.get("extracted_station_id") or "")
+        key = (location, station_id)
+        row = {
+            "source": "daily_capture_missing_forecast",
+            "detected_location_name": location,
+            "detected_station_id": station_id,
+            "detected_station_name": record.get("extracted_station_name") or "",
+            "country_hint": "",
+            "example_market_id": record.get("market_id") or "",
+            "example_slug": record.get("slug") or "",
+            "example_question": record.get("question") or "",
+            "resolution_source": record.get("resolution_source") or "",
+            "suggested_latitude": "",
+            "suggested_longitude": "",
+            "suggested_action": "add verified station coordinates to data/weather/locations.csv",
+            "status": "pending_manual_coordinates",
+        }
+        if pending.get(key) != row:
+            pending[key] = row
+            added_or_updated += 1
+    if pending or added_or_updated:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=fields)
+            writer.writeheader()
+            for row in pending.values():
+                writer.writerow(row)
+    return added_or_updated
+
+
+def _missing_forecast_suggested_action(key: str, records: list[dict[str, Any]]) -> str:
+    reasons = {str(record.get("reason")) for record in records if key in {str(record.get("extracted_station_id") or ""), str(record.get("parsed_location_name") or "")}}
+    if "station_not_in_locations_csv" in reasons:
+        return "人工补 station_id 对应机场站点经纬度"
+    if "location_not_in_locations_csv" in reasons:
+        return "人工补 location 经纬度或 station mapping"
+    if "target_date_out_of_provider_range" in reasons:
+        return "确认 provider 日期窗口；过期市场不需要 current forecast"
+    if "parse_error" in reasons:
+        return "补 classifier 样例或人工确认问题格式"
+    return "检查 provider error / forecast cache"
+
+
+def _missing_reason_zh(reason: str) -> str:
+    translations = {
+        "location_not_in_locations_csv": "地点不在 locations.csv，无法取得经纬度。",
+        "station_not_in_locations_csv": "结算站点不在 locations.csv，不能按 station-level 拉 forecast。",
+        "target_date_out_of_provider_range": "目标日期不在当前 forecast provider 可用窗口。",
+        "metric_not_supported": "当前只支持高温、低温、平均温度。",
+        "provider_error": "provider 请求或解析失败。",
+        "parse_error": "问题文本未能稳定解析出地点/日期/阈值。",
+        "unknown": "现有 JSON 不足以判断具体原因。",
+    }
+    return translations.get(reason, "未知原因。")
+
+
+
 def _load_json_object(path: Path | None) -> dict[str, Any] | None:
     if path is None or not path.exists():
         return None
@@ -455,6 +901,44 @@ def _load_json_list(path: Path | None) -> list[dict[str, Any]]:
     except (OSError, json.JSONDecodeError):
         return []
     return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
+def _count_csv_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open(newline="", encoding="utf-8") as file:
+        return max(0, sum(1 for _ in csv.DictReader(file)))
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as file:
+        return [dict(row) for row in csv.DictReader(file)]
+
+
+def _locations_suggestions_summary(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {
+            "exists": False,
+            "path": str(path),
+            "total": 0,
+            "high_confidence_promotable": 0,
+            "suggested_locations": [],
+        }
+    rows = _read_csv_rows(path)
+    high_confidence = [
+        row
+        for row in rows
+        if row.get("status") == "suggested" and (_float_or_none(row.get("confidence")) or 0) >= 0.85
+    ]
+    return {
+        "exists": True,
+        "path": str(path),
+        "total": len(rows),
+        "high_confidence_promotable": len(high_confidence),
+        "suggested_locations": [row.get("detected_location_name") for row in high_confidence[:20]],
+    }
 
 
 def _resolve_artifact_path(value: Any, run_dir: Path) -> Path | None:
@@ -576,6 +1060,10 @@ def _candidate_failure_reasons(
         signal.get("bucket_numeric_boundary_confirmed")
     ):
         reasons.append("bucket_boundary_not_confirmed")
+    if (classification.market_type == MarketType.weather_temperature_range_bucket) and not bool(
+        signal.get("range_numeric_boundary_confirmed")
+    ):
+        reasons.append("bucket_boundary_not_confirmed")
     if str(signal.get("ambiguity_risk") or "").upper() in {"MEDIUM", "HIGH"} or str(
         signal.get("dispute_risk") or ""
     ).upper() in {"MEDIUM", "HIGH"}:
@@ -589,6 +1077,8 @@ def _market_type_bucket(candidate: dict[str, Any], classification: Any) -> str:
     question = str(candidate.get("question") or "")
     if classification.market_type == MarketType.weather_temperature_exact_bucket:
         return "exact_temperature_bucket"
+    if classification.market_type == MarketType.weather_temperature_range_bucket:
+        return "range_bucket"
     if classification.market_type == MarketType.weather_temperature_threshold:
         return "threshold_above_below"
     if _weather_looking_candidate(candidate):
